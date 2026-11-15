@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Pocket XR</string>
+	<key>CFBundleDisplayName</key>
+	<string>Pocket XR</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.hayeco.pocketxr.mac</string>
+	<key>CFBundleExecutable</key>
+	<string>PocketXR</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Pocket XR reads your glasses' head tracking over their USB cable, which macOS lists as a local network.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Pocket XR is free software under the GNU GPL 3.0.</string>
+</dict>
+</plist>

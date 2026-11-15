@@ -1,0 +1,101 @@
+import Foundation
+
+/// A USB device as the Mac lists it.
+public struct UsbDeviceInfo: Equatable, Sendable {
+    public var vendor: Int
+    public var product: Int
+    public var interfaceClasses: [Int]
+    public var name: String
+
+    public init(vendor: Int, product: Int, interfaceClasses: [Int] = [], name: String = "") {
+        self.vendor = vendor
+        self.product = product
+        self.interfaceClasses = interfaceClasses
+        self.name = name
+    }
+}
+
+/// Which glasses are plugged in, and what Pocket XR can do with them. The model rules are the Steam Deck's
+/// glasses.py, which follows Pocket XR's GlassesProfile, HeadImuTransport and SteadyMode.
+public struct Glasses: Equatable, Sendable {
+    public enum Family: String, Sendable { case aura, one, air, viture, other }
+
+    public static let xreal = 0x3318
+    public static let viture = 0x35CA
+    public static let aura: Set<Int> = [0x0439, 0x043A]
+    public static let oneFamily: [Int: String] = [
+        0x0435: "XREAL One Pro", 0x0436: "XREAL One Pro", 0x0437: "XREAL One", 0x0438: "XREAL One",
+        0x043D: "XREAL 1S", 0x043E: "XREAL 1S", 0x0443: "XREAL One Pro+", 0x0444: "XREAL One Pro+",
+    ]
+    public static let vitureBeast = 0x1211
+    public static let vitureMicrophone = 0x1102
+    public static let airImu: [Int: String] = [
+        0x0424: "XREAL Air", 0x0428: "XREAL Air 2", 0x0432: "XREAL Air 2 Pro", 0x0426: "XREAL Air 2 Ultra",
+    ]
+    public static let airFamily: Set<Int> = [
+        0x0423, 0x0424, 0x0425, 0x0426, 0x0427, 0x0428, 0x0431, 0x0432, 0x043F, 0x0440, 0x0441, 0x0442,
+    ]
+
+    public var name: String
+    public var family: Family
+    public var vendor: Int
+    public var product: Int
+    /// An XREAL Eye (or any XREAL camera) seen beside One-family glasses.
+    public var eye = false
+
+    public init(name: String, family: Family, vendor: Int, product: Int, eye: Bool = false) {
+        self.name = name
+        self.family = family
+        self.vendor = vendor
+        self.product = product
+        self.eye = eye
+    }
+
+    /// Head tracking over the glasses' USB network (169.254.2.1:52998): the Aura and the One family.
+    public var networkImu: Bool { family == .aura || family == .one }
+
+    /// XREAL's control link on 52999: settings Pocket XR can read and set.
+    public var controlLink: Bool { family == .aura || family == .one }
+
+    /// Glasses whose menu settings Pocket XR reads and puts right on every link: the Aura only.
+    public var managed: Bool { family == .aura }
+
+    public var isBeast: Bool { family == .viture && product == Self.vitureBeast }
+
+    /// The One family and the VITURE Beast send x right, y down, z front; the Aura x right, y up, z back.
+    public var axes: HeadFusion.Axes { family == .one || isBeast ? .one : .aura }
+
+    /// Head tracking this version of the Mac app can read. The Air and VITURE (USB HID) come in phase 2.
+    public var trackingOnMac: Bool { networkImu }
+
+    /// Finds the glasses among [devices], in the Deck's order: the Aura, the One family, the Air family, VITURE, then any
+    /// other XREAL device with a network interface (taken as One family, as Pocket XR does).
+    public static func detect(_ devices: [UsbDeviceInfo]) -> Glasses? {
+        let eye = devices.contains { $0.vendor == xreal && $0.interfaceClasses.contains(0x0E) && !aura.contains($0.product) }
+        if let d = devices.first(where: { $0.vendor == xreal && aura.contains($0.product) }) {
+            return Glasses(name: "XREAL Aura", family: .aura, vendor: d.vendor, product: d.product)
+        }
+        if let d = devices.first(where: { $0.vendor == xreal && oneFamily[$0.product] != nil }) {
+            return Glasses(name: oneFamily[d.product]!, family: .one, vendor: d.vendor, product: d.product, eye: eye)
+        }
+        if let d = devices.first(where: { $0.vendor == xreal && airFamily.contains($0.product) }) {
+            return Glasses(name: airImu[d.product] ?? (d.name.isEmpty ? "XREAL Air" : d.name), family: .air,
+                           vendor: d.vendor, product: d.product)
+        }
+        let vit = devices.filter { $0.vendor == viture && $0.product != vitureMicrophone }
+        if let d = vit.first(where: { $0.product == vitureBeast }) ?? vit.first {
+            return Glasses(name: d.name.isEmpty ? "VITURE glasses" : d.name, family: .viture, vendor: d.vendor, product: d.product)
+        }
+        if let d = devices.first(where: { $0.vendor == xreal && $0.interfaceClasses.contains(0x02) }) {
+            return Glasses(name: d.name.isEmpty ? "XREAL glasses" : d.name, family: .one, vendor: d.vendor, product: d.product, eye: eye)
+        }
+        return nil
+    }
+
+    /// The glasses' display among the Mac's screens, by name ("XREAL AURA", "XREAL One", "VITURE ..."), else nil.
+    public static func isGlassesScreenName(_ name: String) -> Bool {
+        let n = name.uppercased()
+        return n.contains("XREAL") || n.contains("NREAL") || n.contains("VITURE") || n.contains("ROKID")
+            || n.contains("RAYNEO")
+    }
+}
