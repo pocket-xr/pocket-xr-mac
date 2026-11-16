@@ -107,4 +107,32 @@ extension NSScreen {
     static var glasses: NSScreen? {
         screens.first { Glasses.isGlassesScreenName($0.localizedName) && !$0.localizedName.hasPrefix("Pocket XR") }
     }
+
+    /// The Mac's own screen, where Pocket XR's windows belong: the built-in one, else the first that is neither the
+    /// glasses nor one of Pocket XR's floating screens (which can only be seen in the glasses).
+    static var own: NSScreen? {
+        let real = screens.filter { !Glasses.isGlassesScreenName($0.localizedName) && !$0.localizedName.hasPrefix("Pocket XR") }
+        return real.first { $0.displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false } ?? real.first ?? main
+    }
+}
+
+extension NSWindow {
+    /// Puts the window in the middle of [screen], whichever screen the pointer or the last window was on.
+    /// Brings a shown window back to the Mac's own screen when it is not on it. macOS moves windows about when
+    /// displays come and go, as they do when the glasses are plugged in and switch to 3D, and one left on the glasses
+    /// or on a floating screen cannot be seen (the tour was, 16 Nov 2026).
+    func keepOnOwnScreen(_ what: String) {
+        guard isVisible, let own = NSScreen.own else { return }
+        let mid = NSPoint(x: frame.midX, y: frame.midY)
+        if own.frame.contains(mid) { return }
+        plog("\(what): was on \(screen?.localizedName ?? "no screen"), moved to \(own.localizedName)")
+        centre(on: own)
+        orderFrontRegardless()
+    }
+
+    func centre(on screen: NSScreen?) {
+        guard let area = screen?.visibleFrame else { center(); return }
+        let size = frame.size
+        setFrameOrigin(NSPoint(x: area.midX - size.width / 2, y: area.midY - size.height / 2))
+    }
 }

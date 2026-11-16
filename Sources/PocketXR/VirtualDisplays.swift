@@ -51,30 +51,55 @@ final class VirtualDisplays {
         }
     }
 
-    /// Puts the virtual displays in a row to the right of the Mac's main screen, and the glasses' own display below
-    /// that row, out of the pointer's way: the pointer goes from the Mac's screen straight onto the virtual displays.
-    func arrange(glasses: CGDirectDisplayID?) {
+    /// Puts the virtual displays to the right of the Mac's own screen, laid out as the screens look in the glasses
+    /// ([panels], see DisplayGrid): side by side there is left and right here, stacked there is above and below
+    /// here, so the pointer crosses between them the way the eye expects. The glasses' own display goes corner to
+    /// corner with the far end, out of the pointer's way. Does nothing when the displays are already there.
+    func arrange(glasses: CGDirectDisplayID?, panels: [PanelPlacement]) {
         guard !screens.isEmpty else { return }
+        // The Mac's own screen is the anchor, found by what it is and not by "the main display": macOS made a
+        // virtual display the main one (16 Nov 2026), the row was then laid out from itself, and the laptop's screen
+        // ended up touching nothing, where the pointer could not reach it.
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16)
+        var n: UInt32 = 0
+        CGGetOnlineDisplayList(16, &ids, &n)
+        let ours = Set(screens.map(\.id))
+        let real: [CGDirectDisplayID] = ids.prefix(Int(n)).filter { id in !ours.contains(id) && glasses != id }
+        let builtIn: CGDirectDisplayID? = real.first(where: { CGDisplayIsBuiltin($0) != 0 })
+        let own: CGDirectDisplayID = builtIn ?? real.first ?? CGMainDisplayID()
+        let ownWidth = Int(CGDisplayBounds(own).width)
+
+        let grid = DisplayGrid.origins(panels: panels, sizes: screens.map { (width: $0.width, height: $0.height) })
+        var wanted: [(id: CGDirectDisplayID, x: Int, y: Int)] = [(id: own, x: 0, y: 0)]
+        var right = ownWidth, bottom = 0
+        for (i, s) in screens.enumerated() {
+            let x = ownWidth + grid[i].x, y = grid[i].y
+            wanted.append((id: s.id, x: x, y: y))
+            right = max(right, x + s.width)
+            bottom = max(bottom, y + s.height)
+        }
+        // Corner to corner with the far end: joined, as macOS wants, with no edge to cross onto it.
+        if let g = glasses { wanted.append((id: g, x: right, y: bottom)) }
+
+        let there = wanted.allSatisfy { w in
+            let b = CGDisplayBounds(w.id)
+            return Int(b.minX) == w.x && Int(b.minY) == w.y
+        }
+        if there { return }
         // A new display can take a moment before macOS lets it be moved.
         Thread.sleep(forTimeInterval: 0.5)
-        let main = CGMainDisplayID()
-        let mainBounds = CGDisplayBounds(main)
         var configRef: CGDisplayConfigRef?
         guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else {
             plog("virtual displays: could not start arranging")
             return
         }
-        var x = Int32(mainBounds.maxX)
-        let top = Int32(mainBounds.minY)
-        for s in screens {
-            CGConfigureDisplayOrigin(config, s.id, x, top)
-            x += Int32(s.width)
-        }
-        if let g = glasses {
-            // Below the row, under the Mac's screen, so the only way onto it is a deliberate trip down.
-            CGConfigureDisplayOrigin(config, g, Int32(mainBounds.minX), Int32(mainBounds.maxY) + 1080)
-        }
+        // The Mac's screen at 0,0 is also the main display again: the menu bar and new windows stay on it.
+        for w in wanted { CGConfigureDisplayOrigin(config, w.id, Int32(w.x), Int32(w.y)) }
         let rc = CGCompleteDisplayConfiguration(config, .forSession)
-        plog("virtual displays: arranged right of the main screen (\(rc == .success ? "done" : "error \(rc.rawValue)"))")
+        let places: [String] = wanted.map { w in
+            let b = CGDisplayBounds(w.id)
+            return "\(Int(b.minX)),\(Int(b.minY)) \(Int(b.width))x\(Int(b.height))"
+        }
+        plog("virtual displays: arranged beside the Mac's screen (\(rc == .success ? "done" : "error \(rc.rawValue)")): \(places.joined(separator: " | "))")
     }
 }

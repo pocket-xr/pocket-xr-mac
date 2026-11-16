@@ -42,6 +42,29 @@ if args.contains("--imu-test") {
     }
 }
 
+// PocketXR --render-ui <folder>   every tour step and settings pane as PNG files, without showing a window (to
+//                                 review the design; no glasses and no permission needed)
+if let i = args.firstIndex(of: "--render-ui"), i + 1 < args.count {
+    // The glasses' picture is drawn by Metal shaders compiled when the app runs, so a mistake in them shows only
+    // then: compile them here too.
+    if let d = MTLCreateSystemDefaultDevice() {
+        do {
+            _ = try d.makeLibrary(source: Renderer.shaderSource, options: nil)
+            print("shaders: compiled")
+        } catch {
+            print("shaders: FAILED\n\(error)")
+            exit(1)
+        }
+    }
+    let folder = URL(fileURLWithPath: args[i + 1], isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    _ = NSApplication.shared
+    let files = MainActor.assumeIsolated { ControlPanelRender.renderAll(to: folder) + TourRender.renderAll(to: folder) + SettingsRender.renderAll(to: folder) }
+    for f in files { print(f.path) }
+    print("rendered \(files.count) pictures")
+    exit(0)
+}
+
 guard let device = MTLCreateSystemDefaultDevice() else {
     plog("no Metal device")
     exit(1)

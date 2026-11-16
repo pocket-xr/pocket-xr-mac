@@ -65,8 +65,28 @@ public struct Glasses: Equatable, Sendable {
     /// The One family and the VITURE Beast send x right, y down, z front; the Aura x right, y up, z back.
     public var axes: HeadFusion.Axes { family == .one || isBeast ? .one : .aura }
 
-    /// Head tracking this version of the Mac app can read. The Air and VITURE (USB HID) come in phase 2.
+    /// Head tracking the Mac app reads without asking: the network stream. The Air family and VITURE (USB HID, [hidImu])
+    /// are read only when the app's own setting says so, as they are untested on a Mac.
     public var trackingOnMac: Bool { networkImu }
+
+    /// A One family model Pocket XR knows by its USB product id (not other XREAL glasses merely taken as One family).
+    public var knownOne: Bool { family == .one && Self.oneFamily[product] != nil }
+
+    /// Glasses that are offered Steady mode: the Aura and the One series (Pocket XR's SteadyMode.offeredOn). Tested
+    /// on the Aura only; on the One series a refusal only ends the change. Other XREAL glasses taken as One family
+    /// are left out: their settings are not known.
+    public var steadyCapable: Bool { family == .aura || knownOne }
+
+    /// Glasses that can hold Steady mode in 6DoF: the Aura, or the One series with the XREAL Eye (SteadyMode.sixDofOn).
+    public var sixDofCapable: Bool { family == .aura || (knownOne && eye) }
+
+    /// Glasses whose 6DoF hold Pocket XR turns on and off itself (Spatial Anchor, 10405): the Aura only. On the One
+    /// series with the Eye the user turns 6DoF on in the glasses' own menu (SteadyMode.appAnchor).
+    public var appAnchor: Bool { family == .aura }
+
+    /// Head tracking over USB HID: the Air family models whose stream is known (the Air, Air 2, Air 2 Pro and Air 2
+    /// Ultra), and VITURE glasses (experimental). None of them has been run on a Mac.
+    public var hidImu: Bool { (family == .air && Self.airImu[product] != nil) || family == .viture }
 
     /// Finds the glasses among [devices], in the Deck's order: the Aura, the One family, the Air family, VITURE, then any
     /// other XREAL device with a network interface (taken as One family, as Pocket XR does).

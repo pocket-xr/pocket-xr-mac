@@ -1,15 +1,22 @@
 import AppKit
+import Combine
 import Metal
 import PocketXRCore
+import ServiceManagement
 
 /// Pocket XR on the Mac: finds the glasses, makes the virtual displays, captures them, tracks the head and draws the
-/// Space on the glasses. Lives in the menu bar.
+/// Space on the glasses. Lives in the menu bar, with a settings window and the tour.
 @MainActor
-final class AppController: NSObject, NSMenuDelegate {
-    private let defaults = UserDefaults.standard
+final class AppController: NSObject, NSMenuDelegate, AppActions {
+    let store = SettingsStore()
+    let state = AppState()
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
-    private var statusLine = NSMenuItem(title: "Looking for glasses…", action: nil, keyEquivalent: "")
+    private lazy var settingsWindow = SettingsWindowController(store: store, state: state, actions: self)
+    private lazy var tourWindow = TourWindowController(store: store, state: state, actions: self)
+    private lazy var controlPanel = ControlPanelController(store: store, state: state, actions: self)
+    private var edgeHint: EdgeHint?
+    private var grab: SpaceGrab?
 
     private let device: MTLDevice
     private var renderer: Renderer?
@@ -18,33 +25,50 @@ final class AppController: NSObject, NSMenuDelegate {
     private var captures = [DisplayCapture]()
     private var glasses: Glasses?
     private var fusion: HeadFusion?
+    private var headPose: HeadPose?
     private var imu: ImuReader?
+    private var hidImu: HidImuReader?
     private var settings: SettingsControl?
     private var settingsState = SettingsControl.State()
-    private var hotKey: HotKey?
+    private var hotKeys = [HotKey]()
+    private var watchers = Set<AnyCancellable>()
+    private var statusTimer: Timer?
     private var quitting = false
     private var displaysWereRemoved = false
+    /// When the glasses' display was last seen to go, nil while it is there.
+    private var glassesGoneSince: Double?
+    /// Set when Pocket XR starts itself again with Steady mode on, so the new copy turns it on again.
+    private nonisolated static let resumeSteadyKey = "resume_steady"
+    private var resumingSteady = false
+    /// When the glasses were last asked to change mode (3D, Steady mode), or Pocket XR started: for a while after,
+    /// their display and even their USB connection come and go, and none of that is an unplugging.
+    private var modeAskedAt = ProcessInfo.processInfo.systemUptime
+    /// Head scroll in Steady mode: the row's slide along the canvas, in the canvas's own degrees.
+    private let steadyScroll = HeadScroll()
+    private var steadyScrollYaw = 0.0
+    /// The canvas is drawn through a narrow lens (see recompute), so a real degree of slide is fewer of its degrees.
+    private let steadyScrollScale = 0.6
+
+    /// Head scroll in Steady mode starts from "looking at the middle" again.
+    private func resetSteadyScroll() {
+        steadyScroll.stop()
+        steadyScrollYaw = 0
+        headPose?.recentre(yawDeg: 0, followTilt: false)
+    }
     private static let displayGoneGraceS = 8.0
 
-    // Settings, kept between runs.
-    private var screenCount: Int {
-        get { max(1, min(3, defaults.object(forKey: "screens") as? Int ?? 2)) }
-        set { defaults.set(newValue, forKey: "screens") }
-    }
-    private var widthDeg: Double {
-        get { defaults.object(forKey: "widthDeg") as? Double ?? SpaceLayout.defaultWidthDeg }
-        set { defaults.set(min(SpaceLayout.maxWidthDeg, max(SpaceLayout.minWidthDeg, newValue)), forKey: "widthDeg") }
-    }
-    private var distance: Double {
-        get { defaults.object(forKey: "distance") as? Double ?? SpaceLayout.defaultDistance }
-        set { defaults.set(min(SpaceLayout.maxDistance, max(SpaceLayout.minDistance, newValue)), forKey: "distance") }
-    }
-    private var want3D: Bool {
-        get { defaults.object(forKey: "sbs3D") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "sbs3D") }
-    }
-    /// Each eye's vertical field of view: 38 degrees on the Aura (the Deck's number).
-    private var fovYDeg: Double { defaults.object(forKey: "fovYDeg") as? Double ?? 38 }
+    // What a frame needs, worked out when the settings change and not on every frame.
+    private var placements = [PanelPlacement]()
+    private var trackingOptions = TrackingOptions(SpaceSettings())
+    private var renderOptions = RenderOptions()
+    private var framePeriod = 1.0 / 60
+    /// The screen count and text sharpness the virtual displays were made with.
+    private var madeScreens = 0
+    private var madeSharper = false
+    /// The screen the pointer is on (an index into the virtual displays), nil while it is on the Mac's own screen.
+    private var pointerScreen: Int?
+    /// Where the head has been pointing, for "Pointer follows head": the screen and since when.
+    private var lookedAt: (index: Int, since: Double)?
 
     init(device: MTLDevice) {
         self.device = device
@@ -54,27 +78,56 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: start and stop
 
     func start() {
-        plog("Pocket XR for Mac \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev") starting, macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        plog("Pocket XR for Mac \(state.version) starting, macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         buildMenu()
-        hotKey = HotKey(keyCode: 15 /* R */, control: true, option: true) { [weak self] in
-            guard let self else { return }
-            Task { @MainActor in self.recentre() }
-        }
+        registerShortcuts()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in self.screensChanged() }
         }
-        if !CGPreflightScreenCaptureAccess() {
-            plog("screen recording: not allowed yet; asking")
-            CGRequestScreenCaptureAccess()
-            setStatus("Allow Pocket XR in System Settings, Privacy & Security, Screen Recording, then open it again.")
+        store.$s
+            .removeDuplicates()
+            .scan((SpaceSettings(), store.s)) { ($0.1, $1) }
+            .sink { [weak self] pair in
+                // The new value is applied after the store has taken it.
+                DispatchQueue.main.async { self?.settingsChanged(from: pair.0, to: pair.1) }
+            }
+            .store(in: &watchers)
+        state.screenRecordingAllowed = CGPreflightScreenCaptureAccess()
+        if !state.screenRecordingAllowed {
+            plog("screen recording: not allowed yet")
+            // A new copy is asked in the tour, where it is explained; one that has seen the tour is asked here.
+            if store.s.tourSeen { CGRequestScreenCaptureAccess() }
         }
+        recompute()
         screensChanged()
+        let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.tick() }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        statusTimer = t
+        if store.s.panelAtStart { openControlPanel() }
+        grab = SpaceGrab(
+            enabled: { [weak self] in (self?.store.s.grabKeys ?? false) && !(self?.state.steady ?? true) && self?.displays != nil },
+            move: { [weak self] yaw, pitch in self?.nudgeSpace(yawDeg: yaw, pitchDeg: pitch) },
+            resize: { [weak self] by in
+                guard let self else { return }
+                var s = self.store.s
+                s.widthDeg += by
+                self.store.s = s.clamped
+            })
+        if Tour.opensByItself(tourSeen: store.s.tourSeen) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.openTour() }
+        }
     }
 
     /// The glasses' display came, went, or changed mode (a 3D switch re-plugs it).
     private func screensChanged() {
         guard !quitting else { return }
+        // Pocket XR's own windows stay on the Mac's screen, now and once macOS has finished moving things.
+        keepWindowsOnOwnScreen()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.keepWindowsOnOwnScreen() }
         let usb = UsbDevices.list()
         let found = Glasses.detect(usb)
         if found != glasses {
@@ -85,159 +138,617 @@ final class AppController: NSObject, NSMenuDelegate {
             if window != nil { plog("glasses display: gone") }
             window?.shut()
             window = nil
+            state.displayText = nil
             // 16 Nov 2026 (Mike unplugged the Aura and "the apps wont open on my mac screen anymore as if theres still
             // another monitor connected"): with no glasses the virtual displays cannot be seen, so they go, and macOS
-            // moves their windows back to the Mac's own screen.
-            // Not at once: a 3D switch takes the glasses' display away for about 4 s (3.6 s seen on the Aura).
-            if displays != nil {
-                DispatchQueue.main.asyncAfter(deadline: .now() + Self.displayGoneGraceS) { [weak self] in
-                    MainActor.assumeIsolated {
-                        guard let self, !self.quitting, self.displays != nil, NSScreen.glasses == nil else { return }
-                        plog("virtual displays: removed, the glasses' display has been gone \(Int(Self.displayGoneGraceS)) s")
-                        self.captures.forEach { $0.stop() }
-                        self.captures = []
-                        self.displays = nil
-                        self.displaysWereRemoved = true
-                    }
-                }
-            }
-            setStatus(glasses == nil ? "Plug in your glasses." : "Waiting for the glasses' display…")
+            // moves their windows back to the Mac's own screen. Not at once: a 3D switch takes the glasses' display
+            // away for about 4 s (3.6 s seen on the Aura).
+            if glassesGoneSince == nil { glassesGoneSince = ProcessInfo.processInfo.systemUptime }
+            if displays != nil { checkGlassesStillGone(after: Self.displayGoneGraceS) }
+            updateStatus()
             return
         }
+        glassesGoneSince = nil
         if displaysWereRemoved, Bundle.main.bundleURL.pathExtension == "app" {
             // Virtual displays made a second time in one session mislead capture (FB17797423, see VirtualDisplays), so
             // the glasses coming back starts Pocket XR afresh.
             plog("glasses display: back; starting Pocket XR again for new virtual displays")
-            quitting = true
-            imu?.stop()
-            settings?.stop()
-            let open = Process()
-            open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            open.arguments = ["-n", Bundle.main.bundleURL.path]
-            try? open.run()
-            NSApp.terminate(nil)
+            relaunch()
             return
         }
         let size = screen.frame.size
         let scale = screen.backingScaleFactor
+        let wide = Int(size.width * scale), high = Int(size.height * scale)
+        framePeriod = 1.0 / Double(max(screen.maximumFramesPerSecond, 30))
+        state.displayText = "\(wide) x \(high), \(screen.maximumFramesPerSecond) Hz"
+        state.stereo = GlassesOptics.isSideBySide(width: wide, height: high)
         if let w = window, w.screen == screen, w.frame.size == size { return }
         window?.shut()
-        plog("glasses display: \"\(screen.localizedName)\" \(Int(size.width * scale))x\(Int(size.height * scale)), \(screen.maximumFramesPerSecond) Hz")
+        plog("glasses display: \"\(screen.localizedName)\" \(wide)x\(high), \(screen.maximumFramesPerSecond) Hz")
         ensureDisplays(glassesID: screen.displayID)
         if renderer == nil { renderer = Renderer(device: device, pixelFormat: .bgra8Unorm) }
         let w = GlassesWindow(screen: screen, device: device)
         w.glassesView.onFrame = { [weak self] drawable in self?.frame(drawable) }
         w.orderFrontRegardless()
         window = w
+        recompute()
         updateStatus()
     }
 
     private func glassesChanged(to g: Glasses?) {
-        imu?.stop()
-        imu = nil
+        stopTracking()
         settings?.stop()
         settings = nil
-        fusion = nil
+        settingsState = SettingsControl.State()
         glasses = g
+        state.glassesName = g?.name
+        state.glassesFamily = g?.family
+        state.steadyAvailable = g?.steadyCapable ?? false
+        state.steady = false
+        state.linkOpen = false
+        recompute()
         guard let g else { return }
-        if g.trackingOnMac {
-            let f = HeadFusion(axes: g.axes)
-            fusion = f
+        startTracking(g)
+        if g.controlLink {
+            let s = SettingsControl(glasses: g) { [weak self] st in
+                Task { @MainActor in
+                    guard let self else { return }
+                    let wasSteady = self.settingsState.steady
+                    self.settingsState = st
+                    self.state.linkOpen = st.link
+                    self.state.busy = st.busy
+                    self.state.steady = st.steady
+                    if wasSteady != st.steady {
+                        plog("Steady mode: \(st.steady ? "on" : "off")")
+                        self.resetSteadyScroll()
+                        self.recompute()
+                    }
+                    // Steady mode was on when Pocket XR started itself again (a screen added or removed): back on.
+                    if st.link, !st.busy, !st.steady, !self.resumingSteady, UserDefaults.standard.bool(forKey: Self.resumeSteadyKey) {
+                        self.resumingSteady = true
+                        plog("Steady mode: coming back on after the restart, once the glasses have settled")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                            MainActor.assumeIsolated {
+                                UserDefaults.standard.removeObject(forKey: Self.resumeSteadyKey)
+                                guard let self, !self.quitting else { return }
+                                self.resumingSteady = false
+                                self.setSteady(true)
+                            }
+                        }
+                    }
+                    self.updateStatus()
+                }
+            }
+            // Read on the settings thread; the settings live in UserDefaults, which is thread safe.
+            // While Steady mode is waiting to come back on after a restart, the glasses are left in 2D: a switch to
+            // 3D and straight on to Steady mode was too much for the Aura (16 Nov 2026: it answered 5001 three times,
+            // then dropped off USB altogether).
+            s.want3D = { Self.savedSettings().want3D && !UserDefaults.standard.bool(forKey: Self.resumeSteadyKey) }
+            s.steadySixDof = { Self.savedSettings().steadySixDof }
+            s.start()
+            settings = s
+        }
+    }
+
+    /// The settings as last saved, readable from any thread.
+    private nonisolated static func savedSettings() -> SpaceSettings {
+        guard let data = UserDefaults.standard.data(forKey: SettingsStore.key),
+              let s = try? JSONDecoder().decode(SpaceSettings.self, from: data) else { return SpaceSettings() }
+        return s
+    }
+
+    private func startTracking(_ g: Glasses) {
+        let useHid = !g.networkImu && g.hidImu && store.s.hidTracking
+        guard g.trackingOnMac || useHid else {
+            plog(g.hidImu
+                ? "head tracking: \(g.name) uses USB HID, which is an untested switch in Settings; the screens are shown flat"
+                : "head tracking: none on the Mac for \(g.name); the screens are shown flat")
+            return
+        }
+        let f = HeadFusion(axes: g.axes)
+        fusion = f
+        headPose = HeadPose(fusion: f)
+        if let a = placements.first?.yawDeg, let b = placements.last?.yawDeg { headPose?.setScrollRange(lowDeg: a, highDeg: b) }
+        if useHid {
+            let r = HidImuReader(glasses: g) { f.report($0) }
+            r.start()
+            hidImu = r
+        } else {
             let r = ImuReader { f.report($0) }
             r.start()
             imu = r
-        } else {
-            plog("head tracking: not on the Mac yet for \(g.name); the screens are shown flat")
         }
-        if g.controlLink {
-            let s = SettingsControl(glasses: g) { [weak self] st in
-                guard let self else { return }
-                Task { @MainActor in self.settingsState = st; self.updateStatus() }
+    }
+
+    private func stopTracking() {
+        imu?.stop()
+        imu = nil
+        hidImu?.stop()
+        hidImu = nil
+        fusion = nil
+        headPose = nil
+        state.trackingOn = false
+        state.imuHz = 0
+    }
+
+    /// Removes the virtual displays once the glasses' display has stayed away long enough: 8 s when the glasses are
+    /// unplugged, 25 s while they are still on USB. A change of mode takes their display away and brings it back
+    /// more than once (turning Steady mode on, 16 Nov 2026: gone 3 s, back 3 s, gone 4 s), and counting from the
+    /// first "gone" alone removed the displays in the middle of it, which started Pocket XR again and undid the mode.
+    private func checkGlassesStillGone(after delay: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.quitting, self.displays != nil, NSScreen.glasses == nil,
+                      let since = self.glassesGoneSince else { return }
+                let gone = ProcessInfo.processInfo.systemUptime - since
+                let pluggedIn = Glasses.detect(UsbDevices.list()) != nil
+                let changingMode = self.state.busy || ProcessInfo.processInfo.systemUptime - self.modeAskedAt < 45
+                let limit = (pluggedIn || changingMode) ? 25.0 : Self.displayGoneGraceS
+                if gone < limit - 0.2 {
+                    self.checkGlassesStillGone(after: min(2, limit - gone))
+                    return
+                }
+                plog("virtual displays: removed, the glasses' display has been gone \(Int(gone)) s")
+                self.captures.forEach { $0.stop() }
+                self.captures = []
+                self.displays = nil
+                self.displaysWereRemoved = true
+                self.state.virtualScreens = 0
+                self.state.capturing = 0
             }
-            // Read on the settings thread; the setting lives in UserDefaults, which is thread safe.
-            s.want3D = { UserDefaults.standard.object(forKey: "sbs3D") as? Bool ?? true }
-            s.start()
-            settings = s
         }
     }
 
     /// The virtual displays and their captures, made once a session (see VirtualDisplays).
     private func ensureDisplays(glassesID: CGDirectDisplayID?) {
         if displays == nil {
-            let d = VirtualDisplays(count: screenCount)
-            d.arrange(glasses: glassesID)
+            madeScreens = store.s.screens
+            madeSharper = store.s.sharperText
+            let d = VirtualDisplays(count: madeScreens, hiDPI: madeSharper)
             displays = d
+            recompute()
+            d.arrange(glasses: glassesID, panels: placements)
+            displays = d
+            state.virtualScreens = d.screens.count
+            state.needsRestart = false
             for s in d.screens {
                 let c = DisplayCapture(displayID: s.id, device: device)
                 captures.append(c)
+                let scale = madeSharper ? 2 : 1
                 Task {
-                    do { try await c.start(width: s.width, height: s.height) } catch {
+                    do { try await c.start(width: s.width * scale, height: s.height * scale) } catch {
                         plog("capture: display \(s.id) did not start: \(error)")
-                        await MainActor.run { self.setStatus("Screen Recording isn't allowed. Allow Pocket XR in System Settings, Privacy & Security.") }
                     }
                 }
             }
         } else {
-            displays?.arrange(glasses: glassesID)
+            displays?.arrange(glasses: glassesID, panels: placements)
         }
+    }
+
+    // MARK: settings
+
+    private func settingsChanged(from old: SpaceSettings, to new: SpaceSettings) {
+        recompute()
+        if old.want3D != new.want3D {
+            plog("3D side by side: \(new.want3D ? "on" : "off")")
+            modeAskedAt = ProcessInfo.processInfo.systemUptime
+            settings?.apply()
+        }
+        if displays != nil {
+            state.needsRestart = new.screens != madeScreens || new.sharperText != madeSharper
+        }
+        if old.shortcuts != new.shortcuts { registerShortcuts() }
+        if old.launchAtLogin != new.launchAtLogin { setLaunchAtLogin(new.launchAtLogin) }
+        if old.hidTracking != new.hidTracking, let g = glasses, !g.networkImu {
+            plog("head tracking over USB HID: \(new.hidTracking ? "on" : "off")")
+            stopTracking()
+            startTracking(g)
+        }
+        updateMenu()
+    }
+
+    /// Works out the screens' places and how a frame is drawn, from the settings and the glasses.
+    private func recompute() {
+        let s = store.s
+        trackingOptions = TrackingOptions(s)
+        let aspects: [Double] = displays?.screens.map { Double($0.width) / Double($0.height) }
+            ?? Array(repeating: 16.0 / 9, count: s.screens)
+        var fov = GlassesOptics.fovYDeg(glasses: glasses)
+        if state.steady {
+            // The glasses hold one flat picture themselves, the whole display as one wide canvas (seen on the Aura,
+            // 16 Nov 2026: 3840x1080 in Ultrawide, and a left and right eye picture showed every screen twice). The
+            // screens are laid in a row that fills it, drawn once, through a narrow lens so they stay near flat.
+            fov = 12
+            let viewAspect: Double = window.map { Double($0.frame.width / max($0.frame.height, 1)) } ?? 16.0 / 9
+            let hfov = 2 * atan(tan(fov * .pi / 360) * viewAspect) * 180 / .pi
+            let n = Double(max(aspects.count, 1))
+            let gap = 0.6
+            let each = max(4, (hfov * 0.96 - gap * (n - 1)) / n)
+            placements = SpaceLayout.row(aspects: aspects, widthDeg: each, distance: SpaceLayout.defaultDistance, gapDeg: gap)
+        } else {
+            placements = SpaceLayout.arrange(layout: s.layout, aspects: aspects, widthDeg: s.widthDeg, distance: s.distance, curve: s.curve)
+            // Moved by hand: the whole Space turned about the head.
+            for i in placements.indices {
+                placements[i].yawDeg += s.offsetYawDeg
+                placements[i].pitchDeg += s.offsetPitchDeg
+            }
+        }
+        state.panels = placements
+        state.viewFovYDeg = fov
+        let wholeAspect: Double = window.map { Double($0.frame.width / max($0.frame.height, 1)) } ?? 16.0 / 9
+        state.viewAspect = (!state.steady && wholeAspect >= 3.2) ? wholeAspect / 2 : wholeAspect
+        // The pointer crosses between the displays the way the screens now look (a no-op when nothing moved).
+        if !quitting { displays?.arrange(glasses: NSScreen.glasses?.displayID, panels: placements) }
+        // Head scroll slides the row no further than its first and last screens.
+        if let a = placements.first?.yawDeg, let b = placements.last?.yawDeg { headPose?.setScrollRange(lowDeg: a, highDeg: b) }
+        var o = RenderOptions()
+        o.fovYDeg = fov
+        o.ipd = s.ipdMm / 1000
+        o.brightness = s.brightness
+        o.glow = s.glow
+        o.glowColor = s.glowColor.color
+        o.edgeFade = state.steady ? .off : s.edgeFade
+        o.mono = state.steady
+        o.focused = pointerScreen
+        renderOptions = o
     }
 
     // MARK: drawing
 
     private func frame(_ drawable: CAMetalDrawable) {
-        guard let renderer, let displays else { return }
-        let head = fusion?.view() ?? .identity
-        let aspects = displays.screens.map { Double($0.width) / Double($0.height) }
-        let placements = SpaceLayout.row(aspects: aspects, widthDeg: widthDeg, distance: distance)
-        let panels = zip(placements, captures).map { ($0, $1.texture) }
-        renderer.draw(drawable: drawable, head: head, panels: panels, fovYDeg: fovYDeg)
+        guard let renderer, displays != nil else { return }
+        var head = Quat.identity
+        var shown = placements
+        // In Steady mode the glasses hold the picture, so the app draws it fixed to the display.
+        if !state.steady, let pose = headPose {
+            head = pose.drawPose(now: ProcessInfo.processInfo.systemUptime, framePeriod: framePeriod, options: trackingOptions)
+            let scroll = pose.scrollYawDeg
+            if scroll != 0 {
+                for i in shown.indices { shown[i].yawDeg += scroll }
+            }
+        } else if state.steady, let pose = headPose, store.s.headScroll, store.s.headTracking, shown.count > 1 {
+            // Head scroll in Steady mode: the glasses hold the canvas, and the app still knows which way the head
+            // has turned since Steady mode came on (or the last Recentre). Past the dead zone the row slides along
+            // the canvas, as it does in Smooth Follow. The pose is worked out only to read the turn from it.
+            _ = pose.drawPose(now: ProcessInfo.processInfo.systemUptime, framePeriod: framePeriod, options: trackingOptions)
+            let look = pose.yawPitchDeg
+            let delta = steadyScroll.step(offsetYawDeg: -look.yaw, pitchDeg: look.pitch, dtS: framePeriod) * steadyScrollScale
+            let low = min(shown.first?.yawDeg ?? 0, shown.last?.yawDeg ?? 0), high = max(shown.first?.yawDeg ?? 0, shown.last?.yawDeg ?? 0)
+            steadyScrollYaw = HeadScroll.clamp(viewYawDeg: steadyScrollYaw, deltaDeg: delta, lowDeg: low, highDeg: high)
+            if steadyScrollYaw != 0 {
+                for i in shown.indices { shown[i].yawDeg += steadyScrollYaw }
+            }
+        } else if steadyScrollYaw != 0 {
+            steadyScrollYaw = 0
+            steadyScroll.stop()
+        }
+        var panels = [(PanelPlacement, MTLTexture?)]()
+        panels.reserveCapacity(shown.count)
+        for (i, p) in shown.enumerated() where i < captures.count {
+            panels.append((p, captures[i].texture))
+        }
+        renderer.draw(drawable: drawable, head: head, panels: panels, options: renderOptions)
+    }
+
+    // MARK: the pointer, and what the windows show
+
+    /// Four times a second: where the pointer is, what the status says.
+    private func tick() {
+        guard !quitting else { return }
+        trackPointer()
+        publishDisplayTiles()
+        updateEdgeHint()
+        state.fps = window?.glassesView.fps ?? 0
+        state.capturing = captures.filter { $0.texture != nil }.count
+        if let pose = headPose, let f = fusion {
+            let hz = pose.reportsPerSecond
+            state.imuHz = hz
+            state.trackingOn = hz > 0
+            state.biasReady = f.biasReady
+            let yp = pose.yawPitchDeg
+            state.yawDeg = yp.yaw
+            state.pitchDeg = yp.pitch
+        } else {
+            state.trackingOn = false
+            state.imuHz = 0
+        }
+        let allowed = CGPreflightScreenCaptureAccess()
+        if allowed != state.screenRecordingAllowed { state.screenRecordingAllowed = allowed }
+        updateStatus()
+    }
+
+    private func trackPointer() {
+        guard let screens = displays?.screens, !screens.isEmpty, let at = CGEvent(source: nil)?.location else {
+            if pointerScreen != nil { pointerScreen = nil; renderOptions.focused = nil }
+            return
+        }
+        let on = screens.firstIndex { CGDisplayBounds($0.id).contains(at) }
+        if on != pointerScreen {
+            pointerScreen = on
+            renderOptions.focused = on
+        }
+        if on != nil, !state.pointerVisitedScreen { state.pointerVisitedScreen = true }
+        guard store.s.pointerFollowsHead, !state.steady, let pose = headPose, let on else {
+            lookedAt = nil
+            return
+        }
+        // The head has to rest on another screen for a moment before the pointer goes there.
+        let now = ProcessInfo.processInfo.systemUptime
+        let yp = pose.yawPitchDeg
+        let head = Quat.aboutY(yp.yaw * .pi / 180) * Quat.aboutX(yp.pitch * .pi / 180)
+        guard let hit = LookTarget.hit(head: head, panels: placements), hit.index != on, hit.index < screens.count else {
+            lookedAt = nil
+            return
+        }
+        if let l = lookedAt, l.index == hit.index {
+            if now - l.since >= 0.45 {
+                warpPointer(toScreen: hit.index, u: 0.5, v: 0.5)
+                lookedAt = nil
+            }
+        } else {
+            lookedAt = (hit.index, now)
+        }
+    }
+
+    private func warpPointer(toScreen index: Int, u: Double, v: Double) {
+        guard let screens = displays?.screens, index < screens.count else { return }
+        let b = CGDisplayBounds(screens[index].id)
+        CGWarpMouseCursorPosition(CGPoint(x: b.minX + b.width * u, y: b.minY + b.height * v))
+        // Without this the pointer stays frozen for a quarter second after a warp.
+        CGAssociateMouseAndMouseCursorPosition(1)
+    }
+
+    /// The pointer goes to the screen the head points at, where it points.
+    private func pointerToLookedScreen() {
+        guard let pose = headPose, !state.steady else { return }
+        let yp = pose.yawPitchDeg
+        let head = Quat.aboutY(yp.yaw * .pi / 180) * Quat.aboutX(yp.pitch * .pi / 180)
+        guard let hit = LookTarget.hit(head: head, panels: placements) else { return }
+        warpPointer(toScreen: hit.index, u: hit.u, v: hit.v)
     }
 
     // MARK: actions
 
-    @objc func recentre() {
-        fusion?.recentre()
+    func recentre() {
+        if state.steady {
+            settings?.recentreCanvas()
+            resetSteadyScroll()
+        } else {
+            // Recentre is "in front of me, now": a move by hand is undone first.
+            if store.s.offsetYawDeg != 0 || store.s.offsetPitchDeg != 0 {
+                store.s.offsetYawDeg = 0
+                store.s.offsetPitchDeg = 0
+                recompute()
+            }
+            let middle = SpaceLayout.middle(placements)
+            headPose?.recentre(yawDeg: middle.yawDeg, followTilt: store.s.recentreFollowsTilt)
+        }
+        state.recentred = true
         plog("recentre")
     }
 
-    @objc private func bigger() { widthDeg += 5; updateMenu() }
-    @objc private func smaller() { widthDeg -= 5; updateMenu() }
-    @objc private func nearer() { distance -= 0.2; updateMenu() }
-    @objc private func further() { distance += 0.2; updateMenu() }
-
-    @objc private func toggle3D() {
-        want3D.toggle()
-        plog("3D side by side: \(want3D ? "on" : "off")")
-        settings?.apply()
-        updateMenu()
+    func adjust(_ a: SpaceAdjust) {
+        var s = store.s
+        switch a {
+        case .bigger: s.widthDeg += 5
+        case .smaller: s.widthDeg -= 5
+        case .nearer: s.distance -= 0.2
+        case .further: s.distance += 0.2
+        case .moreCurve: s.curve += 0.25
+        case .lessCurve: s.curve -= 0.25
+        case .nextLayout:
+            let choices = SpaceLayout.choices(count: max(state.virtualScreens, 1))
+            if let i = choices.firstIndex(of: s.layout) {
+                s.layout = choices[(i + 1) % choices.count]
+            } else if let first = choices.first {
+                s.layout = first
+            }
+        }
+        store.s = s
     }
 
-    @objc private func pickScreens(_ item: NSMenuItem) {
-        guard item.tag != screenCount else { return }
-        screenCount = item.tag
-        // Virtual displays are made once a session (Apple bug FB17797423), so the new count needs a restart.
-        let a = NSAlert()
-        a.messageText = "Quit and open Pocket XR again to use \(item.tag) screen\(item.tag == 1 ? "" : "s")."
-        a.runModal()
-        updateMenu()
+    func setSteady(_ on: Bool) {
+        guard let settings, state.steadyAvailable else { return }
+        plog("Steady mode: asked \(on ? "on" : "off")")
+        modeAskedAt = ProcessInfo.processInfo.systemUptime
+        settings.setSteady(on)
     }
 
-    @objc private func sendLogs() { SendLogs.run() }
+    func openTour() { tourWindow.show() }
 
-    @objc private func quit() {
+    func openControlPanel() { controlPanel.show() }
+
+    func nudgeSpace(yawDeg: Double, pitchDeg: Double) {
+        guard !state.steady else { return }
+        var s = store.s
+        s.offsetYawDeg += yawDeg
+        s.offsetPitchDeg += pitchDeg
+        store.s = s.clamped
+    }
+
+    func movePointer(toScreen index: Int?) {
+        if let index {
+            warpPointer(toScreen: index, u: 0.5, v: 0.5)
+        } else if let own = NSScreen.own?.displayID {
+            let b = CGDisplayBounds(own)
+            CGWarpMouseCursorPosition(CGPoint(x: b.midX, y: b.midY))
+            CGAssociateMouseAndMouseCursorPosition(1)
+        }
+    }
+
+    /// Every display as macOS has it now, for the control panel's map.
+    private func publishDisplayTiles() {
+        var tiles = [DisplayTile]()
+        if let screens = displays?.screens, !screens.isEmpty {
+            if let own = NSScreen.own?.displayID {
+                tiles.append(DisplayTile(id: -1, title: "This Mac", frame: CGDisplayBounds(own)))
+            }
+            for (i, s) in screens.enumerated() {
+                tiles.append(DisplayTile(id: i, title: "Screen \(i + 1)", frame: CGDisplayBounds(s.id)))
+            }
+        }
+        if tiles != state.displayTiles { state.displayTiles = tiles }
+        if state.pointerScreen != pointerScreen { state.pointerScreen = pointerScreen }
+    }
+
+    private func keepWindowsOnOwnScreen() {
+        controlPanel.keepOnOwnScreen()
+        tourWindow.keepOnOwnScreen()
+        settingsWindow.keepOnOwnScreen()
+    }
+
+    func openSettings() { settingsWindow.show() }
+
+    func sendLogs() { SendLogs.run() }
+
+    func saveGlassesReport() {
+        let usb = UsbDevices.list()
+        let shown = NSScreen.screens.map { s -> String in
+            let scale = s.backingScaleFactor
+            return "\(s.localizedName): \(Int(s.frame.width * scale)) x \(Int(s.frame.height * scale)), \(s.maximumFramesPerSecond) Hz"
+        }
+        let tracking = "\(state.imuHz) reports a second via \(imu?.connectedVia ?? hidImu?.connectedVia ?? "nothing"), bias \(state.biasReady ? "learnt" : "learning")"
+        let text = GlassesReport.text(
+            appVersion: state.version, system: ProcessInfo.processInfo.operatingSystemVersionString, glasses: glasses,
+            usb: usb, links: GlassesNet.routes().map(\.description), displays: shown,
+            state: settings == nil ? nil : settingsState, trackingLine: tracking)
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        let file = folder.appendingPathComponent("Pocket XR glasses report \(stamp).txt")
+        do {
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            plog("glasses report: saved")
+            NSWorkspace.shared.activateFileViewerSelecting([file])
+        } catch {
+            plog("glasses report: not saved: \(error.localizedDescription)")
+        }
+    }
+
+    func exportSettings() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Pocket XR settings.json"
+        panel.canCreateDirectories = true
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try store.exported().write(to: url) } catch { plog("settings: not saved to a file: \(error.localizedDescription)") }
+    }
+
+    func importSettings() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
+        if !store.restore(from: data) {
+            let a = NSAlert()
+            a.messageText = "That is not a Pocket XR settings file."
+            a.runModal()
+        }
+    }
+
+    func requestScreenRecording() {
+        if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
+    }
+
+    func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func openDisplaySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Displays-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func restartApp() {
+        plog("restart asked")
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return }
+        if state.steady { UserDefaults.standard.set(true, forKey: Self.resumeSteadyKey) }
+        leave { [weak self] in self?.relaunch() }
+    }
+
+    func quit() {
+        plog("quit")
+        leave { NSApp.terminate(nil) }
+    }
+
+    /// Stops drawing, puts the glasses back as they were, then calls [then] on the main thread (within 20 s at most).
+    private func leave(then: @escaping @MainActor () -> Void) {
         guard !quitting else { return }
         quitting = true
-        setStatus("Putting the glasses back…")
-        plog("quit")
+        state.statusLine = "Putting the glasses back…"
+        updateMenu()
         captures.forEach { $0.stop() }
         window?.shut()
-        imu?.stop()
-        guard let s = settings else { NSApp.terminate(nil); return }
-        s.restore {
-            DispatchQueue.main.async { NSApp.terminate(nil) }
+        stopTracking()
+        var done = false
+        let finish: @MainActor () -> Void = {
+            guard !done else { return }
+            done = true
+            then()
         }
-        // Never hang on glasses that stopped answering.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { NSApp.terminate(nil) }
+        guard let s = settings else { finish(); return }
+        s.restore { DispatchQueue.main.async { MainActor.assumeIsolated { finish() } } }
+        // Never hang on glasses that stopped answering. Leaving Steady mode takes more steps, so it gets longer.
+        DispatchQueue.main.asyncAfter(deadline: .now() + (state.steady ? 30 : 20)) { MainActor.assumeIsolated { finish() } }
+    }
+
+    private func relaunch() {
+        quitting = true
+        stopTracking()
+        settings?.stop()
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = ["-n", Bundle.main.bundleURL.path]
+        try? open.run()
+        NSApp.terminate(nil)
+    }
+
+    private func setLaunchAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            plog("open at login: \(on ? "on" : "off")")
+        } catch {
+            plog("open at login: macOS refused: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: shortcuts
+
+    private func registerShortcuts() {
+        hotKeys.removeAll()
+        guard store.s.shortcuts else { return }
+        for sc in Shortcut.all {
+            let id = sc.id
+            if let k = HotKey(keyCode: sc.keyCode, control: true, option: true, action: { [weak self] in
+                Task { @MainActor in self?.shortcut(id) }
+            }) {
+                hotKeys.append(k)
+            } else {
+                plog("shortcut \(sc.keys) (\(sc.title)): macOS would not register it")
+            }
+        }
+    }
+
+    private func shortcut(_ id: String) {
+        switch id {
+        case "recentre": recentre()
+        case "steady": setSteady(!state.steady)
+        case "bigger": adjust(.bigger)
+        case "smaller": adjust(.smaller)
+        case "nearer": adjust(.nearer)
+        case "further": adjust(.further)
+        case "moreCurve": adjust(.moreCurve)
+        case "lessCurve": adjust(.lessCurve)
+        case "layout": adjust(.nextLayout)
+        case "depth": store.s.want3D.toggle()
+        case "pointer": pointerToLookedScreen()
+        default: break
+        }
     }
 
     // MARK: menu
@@ -247,68 +758,169 @@ final class AppController: NSObject, NSMenuDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "visionpro", accessibilityDescription: "Pocket XR")
             ?? NSImage(systemSymbolName: "eyeglasses", accessibilityDescription: "Pocket XR")
         menu.delegate = self
+        menu.autoenablesItems = false
         statusItem.menu = menu
         updateMenu()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
         updateStatus()
+        updateMenu()
     }
 
-    private func item(_ title: String, _ action: Selector?, key: String = "") -> NSMenuItem {
+    private func item(_ title: String, _ action: Selector?, key: String = "", on: Bool? = nil, enabled: Bool = true) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
         i.target = self
+        i.isEnabled = enabled && action != nil
+        if let on { i.state = on ? .on : .off }
         return i
+    }
+
+    private func shortcutHint(_ id: String) -> String {
+        guard store.s.shortcuts, let s = Shortcut.all.first(where: { $0.id == id }) else { return "" }
+        return "   \(s.keys)"
     }
 
     private func updateMenu() {
         menu.removeAllItems()
-        statusLine.isEnabled = false
-        menu.addItem(statusLine)
-        menu.addItem(.separator())
-        let r = item("Recentre", #selector(recentre))
-        r.toolTip = "Also Control-Option-R from anywhere"
-        menu.addItem(r)
-        menu.addItem(item("Bigger", #selector(bigger)))
-        menu.addItem(item("Smaller", #selector(smaller)))
-        menu.addItem(item("Nearer", #selector(nearer)))
-        menu.addItem(item("Further", #selector(further)))
-        let d3 = item("3D side by side", #selector(toggle3D))
-        d3.state = want3D ? .on : .off
-        menu.addItem(d3)
-        let screens = NSMenuItem(title: "Screens", action: nil, keyEquivalent: "")
-        let sub = NSMenu()
-        for n in 1...3 {
-            let i = item("\(n)", #selector(pickScreens(_:)))
-            i.tag = n
-            i.state = n == screenCount ? .on : .off
-            sub.addItem(i)
+        let s = store.s
+        let status = NSMenuItem(title: state.statusLine, action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        menu.addItem(status)
+        if state.needsRestart {
+            menu.addItem(item("Restart Pocket XR for the new screens", #selector(menuRestart)))
         }
-        screens.submenu = sub
-        menu.addItem(screens)
+        menu.addItem(item("Open the control panel", #selector(menuPanel)))
         menu.addItem(.separator())
-        menu.addItem(item("Send logs to Mike", #selector(sendLogs)))
-        menu.addItem(item("Quit and put the glasses back", #selector(quit), key: "q"))
+        menu.addItem(item("Recentre" + shortcutHint("recentre"), #selector(menuRecentre)))
+        menu.addItem(item("Steady mode" + shortcutHint("steady"), #selector(menuSteady), on: state.steady, enabled: state.steadyAvailable && state.linkOpen))
+        menu.addItem(item("3D side by side" + shortcutHint("depth"), #selector(menu3D), on: s.want3D))
+        menu.addItem(.separator())
+
+        let layout = NSMenuItem(title: "Layout", action: nil, keyEquivalent: "")
+        let layoutMenu = NSMenu()
+        let count = max(state.virtualScreens, s.screens)
+        for l in SpaceLayout.choices(count: count) {
+            let i = item(SpaceLayout.title(l, count: count), #selector(menuLayout(_:)), on: l == s.layout)
+            i.representedObject = l.rawValue
+            layoutMenu.addItem(i)
+        }
+        layout.submenu = layoutMenu
+        menu.addItem(layout)
+        menu.addItem(item("Bigger" + shortcutHint("bigger"), #selector(menuBigger)))
+        menu.addItem(item("Smaller" + shortcutHint("smaller"), #selector(menuSmaller)))
+        menu.addItem(item("Nearer" + shortcutHint("nearer"), #selector(menuNearer)))
+        menu.addItem(item("Further" + shortcutHint("further"), #selector(menuFurther)))
+        menu.addItem(item("More curve" + shortcutHint("moreCurve"), #selector(menuMoreCurve)))
+        menu.addItem(item("Less curve" + shortcutHint("lessCurve"), #selector(menuLessCurve)))
+
+        let tracking = NSMenuItem(title: "Tracking", action: nil, keyEquivalent: "")
+        let trackingMenu = NSMenu()
+        for m in TrackingMode.allCases {
+            let i = item(m.title, #selector(menuTracking(_:)), on: s.headTracking && m == s.trackingMode)
+            i.representedObject = m.rawValue
+            trackingMenu.addItem(i)
+        }
+        trackingMenu.addItem(.separator())
+        trackingMenu.addItem(item("Head tracking", #selector(menuHeadTracking), on: s.headTracking))
+        tracking.submenu = trackingMenu
+        menu.addItem(tracking)
+
+        let screens = NSMenuItem(title: "Screens", action: nil, keyEquivalent: "")
+        let screensMenu = NSMenu()
+        for n in SpaceSettings.screensRange {
+            let i = item("\(n)", #selector(menuScreens(_:)), on: n == s.screens)
+            i.tag = n
+            screensMenu.addItem(i)
+        }
+        screens.submenu = screensMenu
+        menu.addItem(screens)
+
+        menu.addItem(.separator())
+        menu.addItem(item("Settings…", #selector(menuSettings), key: ","))
+        menu.addItem(item("Tour of Pocket XR", #selector(menuTour)))
+        menu.addItem(item("Send logs to Mike", #selector(menuSendLogs)))
+        menu.addItem(.separator())
+        menu.addItem(item("Quit and put the glasses back", #selector(menuQuit), key: "q"))
     }
 
-    private func setStatus(_ text: String) {
-        statusLine.title = text
+    @objc private func menuPanel() { openControlPanel() }
+    @objc private func menuRecentre() { recentre() }
+
+    /// The glowing tab on the edge of the Mac's screen that the floating screens lie beyond, until the pointer has
+    /// been across once this session.
+    private func updateEdgeHint() {
+        let tiles = state.displayTiles
+        guard !state.pointerVisitedScreen, let own = tiles.first(where: { $0.isOwn }),
+              let first = tiles.first(where: { !$0.isOwn && $0.frame.minX >= own.frame.maxX - 1 && $0.frame.minY < own.frame.maxY && $0.frame.maxY > own.frame.minY }),
+              let screen = NSScreen.own else {
+            edgeHint?.close()
+            edgeHint = nil
+            return
+        }
+        _ = first
+        if edgeHint == nil { edgeHint = EdgeHint() }
+        edgeHint?.show(onRightEdgeOf: screen)
     }
+    @objc private func menuSteady() { setSteady(!state.steady) }
+    @objc private func menu3D() { store.s.want3D.toggle() }
+    @objc private func menuBigger() { adjust(.bigger) }
+    @objc private func menuSmaller() { adjust(.smaller) }
+    @objc private func menuNearer() { adjust(.nearer) }
+    @objc private func menuFurther() { adjust(.further) }
+    @objc private func menuMoreCurve() { adjust(.moreCurve) }
+    @objc private func menuLessCurve() { adjust(.lessCurve) }
+    @objc private func menuHeadTracking() { store.s.headTracking.toggle() }
+    @objc private func menuSettings() { openSettings() }
+    @objc private func menuTour() { openTour() }
+    @objc private func menuSendLogs() { sendLogs() }
+    @objc private func menuRestart() { restartApp() }
+    @objc private func menuQuit() { quit() }
+
+    @objc private func menuLayout(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let l = ArrangeLayout(rawValue: raw) else { return }
+        store.s.layout = l
+    }
+
+    @objc private func menuTracking(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let m = TrackingMode(rawValue: raw) else { return }
+        var s = store.s
+        s.headTracking = true
+        s.trackingMode = m
+        store.s = s
+    }
+
+    @objc private func menuScreens(_ sender: NSMenuItem) {
+        store.s.screens = sender.tag
+    }
+
+    // MARK: status
 
     private func updateStatus() {
-        guard let g = glasses else { setStatus("Plug in your glasses."); return }
-        var parts = [g.name]
-        if g.trackingOnMac { parts.append(imu?.connectedVia != nil ? "head tracking on" : "head tracking starting") }
-        if let w = window {
-            let px = w.frame.size.width * w.backingScaleFactor
-            parts.append("\(Int(px)) wide, \(Int(w.glassesView.fps.rounded())) fps")
+        guard !quitting else { return }
+        let line: String
+        if let name = state.glassesName {
+            var parts = [name]
+            if window == nil {
+                parts.append("waiting for its display")
+            } else {
+                if !state.screenRecordingAllowed {
+                    parts.append("allow Screen Recording to see your screens")
+                } else if state.steady {
+                    parts.append("Steady mode")
+                } else if state.trackingOn {
+                    parts.append("head tracking on")
+                } else if headPose != nil {
+                    parts.append("head tracking starting")
+                }
+                if state.stereo && !state.steady { parts.append("3D") }
+                parts.append("\(Int(state.fps.rounded())) fps")
+            }
+            if state.busy { parts.append("changing settings…") }
+            line = parts.joined(separator: " · ")
         } else {
-            parts.append("waiting for its display")
+            line = "Plug in your glasses."
         }
-        if settingsState.link {
-            if settingsState.ultrawide == 1 { parts.append("Ultrawide") } else if settingsState.stereo == 1 { parts.append("3D") }
-            if settingsState.busy { parts.append("changing settings…") }
-        }
-        setStatus(parts.joined(separator: " · "))
+        if line != state.statusLine { state.statusLine = line }
     }
 }

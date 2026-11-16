@@ -33,11 +33,11 @@ module CVirtualDisplay {
 EOF
 cp Sources/CVirtualDisplay/include/CVirtualDisplay.h "$OUT/CVirtualDisplay.h"
 
-swiftc ${VFS[@]+"${VFS[@]}"} -swift-version 5 -target "$TARGET" -sdk "$SDK" -parse-as-library -emit-module -emit-object -wmo \
+swiftc ${VFS[@]+"${VFS[@]}"} -swift-version 5 -target "$TARGET" -sdk "$SDK" -O -parse-as-library -emit-module -emit-object -wmo \
     -module-name PocketXRCore -emit-module-path "$OUT/PocketXRCore.swiftmodule" \
     Sources/PocketXRCore/*.swift -o "$OUT/PocketXRCore.o"
 
-swiftc ${VFS[@]+"${VFS[@]}"} -swift-version 5 -target "$TARGET" -sdk "$SDK" -wmo -module-name PocketXR -I "$OUT" \
+swiftc ${VFS[@]+"${VFS[@]}"} -swift-version 5 -target "$TARGET" -sdk "$SDK" -O -wmo -module-name PocketXR -I "$OUT" \
     Sources/PocketXR/*.swift "$OUT/PocketXRCore.o" "$OUT/CVirtualDisplay.o" \
     -framework AppKit -framework Metal -framework MetalKit -framework QuartzCore -framework ScreenCaptureKit \
     -framework IOKit -framework CoreVideo -o "$OUT/PocketXR"

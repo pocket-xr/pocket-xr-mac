@@ -149,6 +149,20 @@ public enum ControlWire {
     public static func anchorSetFrame(_ id: UInt32, on: Bool) throws -> [UInt8] { try rpc(anchorSet, id, pbVarint(1, on ? 1 : 0)) }
     public static func sizeSetFrame(_ id: UInt32, size: Float) throws -> [UInt8] { try rpc(sizeSet, id, pbFloat(1, size)) }
     public static func followFrame(_ id: UInt32) throws -> [UInt8] { try rpc(spaceMode, id, pbVarint(1, spaceFollow)) }
+    /// Recentre in Ultrawide (10279, an empty request): the glasses bring their own canvas in front of the head.
+    public static func recenterFrame(_ id: UInt32) throws -> [UInt8] { try rpc(recenter, id) }
+
+    /// Any screen size outside this is not believed, whatever range the glasses answer (Pocket XR's
+    /// SCREEN_SIZE_LOWEST and SCREEN_SIZE_HIGHEST).
+    public static let screenSizeLowest = 0.5
+    public static let screenSizeHighest = 1.5
+
+    /// A screen size the glasses answered (10397's value, or 10396's largest in its second value), if it can be
+    /// believed: a number inside [screenSizeLowest, screenSizeHighest].
+    public static func believableSize(_ v: Double?) -> Double? {
+        guard let v = v, v.isFinite, v >= screenSizeLowest, v <= screenSizeHighest else { return nil }
+        return v
+    }
 
     /// An answer from the glasses.
     public struct Answer: Equatable, Sendable {

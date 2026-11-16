@@ -1,5 +1,25 @@
 import Foundation
 
+/// The newest fused head sample, for the pose chain (HeadPose): everything read under the fusion's lock at once.
+public struct HeadSample: Equatable, Sendable {
+    /// The head relative to the recentred forward (x right, y up, z back).
+    public var orientation: Quat
+    /// The gyro's rate with the learnt bias taken out, in the head's own axes, rad/s.
+    public var rate: SIMD3<Double>
+    /// When the sample was taken, on the host's clock (ProcessInfo.processInfo.systemUptime), seconds: the glasses'
+    /// own time stamp carried over by ImuClock, so a burst of reports is not all stamped with the burst's arrival.
+    public var hostTime: Double
+    /// How many recentres the fusion has made: a change means the orientation's frame jumped.
+    public var recentres: Int
+
+    public init(orientation: Quat, rate: SIMD3<Double>, hostTime: Double, recentres: Int) {
+        self.orientation = orientation
+        self.rate = rate
+        self.hostTime = hostTime
+        self.recentres = recentres
+    }
+}
+
 /// Head orientation from gyro and accelerometer: a small complementary filter, ported as it is from Pocket XR for
 /// Steam Deck's fusion.py (tuned there on Mike's Aura, 11 and 12 November 2026).
 ///
@@ -22,6 +42,11 @@ public final class HeadFusion: @unchecked Sendable {
     static let restRun = 4
     static let restGain = 0.5
     static let firstRecentreS = 5.0
+    /// A recentre that follows the head's tilt takes its pitch as straight ahead only past this, degrees (Pocket XR's
+    /// FusionSettings.recentreTiltMinDeg).
+    public static let recentreTiltMinDeg = 15.0
+    /// Looking nearly straight up or down, the forward's heading is noise: the head's right side gives it instead.
+    static let nearVerticalDeg = 80.0
 
     private let lock = NSLock()
     private let sign: SIMD3<Double>
@@ -38,6 +63,22 @@ public final class HeadFusion: @unchecked Sendable {
     private var gMag: Double?
     private var wantRecentre = true
     private var recentreYaw = 0.0
+    // The pitch the last recentre took as straight ahead, radians (0 on the horizon), and whether the recentre that
+    // waits was asked for by the user (it decides the pitch again) or is the fusion's own (it keeps the pitch).
+    private var refPitch = 0.0
+    private var recentreSetsTilt = false
+    private var recentreFollowsTilt = false
+    private var clock = ImuClock()
+    private var newest: HeadSample?
+    private var sink: ((HeadSample) -> Void)?
+
+    /// Recentres made so far (the first sample's and the one when the bias is first known count too).
+    public private(set) var recentres = 0
+    /// The pitch the last recentre took as straight ahead, degrees up; 0 on the horizon.
+    public var recentrePitchDeg: Double {
+        lock.lock(); defer { lock.unlock() }
+        return refPitch * 180 / .pi
+    }
 
     public private(set) var count = 0
     public private(set) var biasReady = false
@@ -49,21 +90,40 @@ public final class HeadFusion: @unchecked Sendable {
         restMax = axes == .aura ? Self.restMaxAura : Self.restMaxOther
     }
 
-    /// One sample from the glasses.
-    public func report(_ s: ImuSample) {
+    /// One sample from the glasses, which arrived at [arrived] on the host's clock (seconds, the clock HeadPose's
+    /// drawPose is called with).
+    public func report(_ s: ImuSample, arrived: Double = ProcessInfo.processInfo.systemUptime) {
         let g = s.gyro * sign
         let a = s.accel * sign
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        var out: HeadSample?
+        var to: ((HeadSample) -> Void)?
+        if integrate(s, g, a) {
+            let host: Int64 = clock.toHost(deviceNs: Int64(bitPattern: s.timestampNs), arrivedNs: Int64(arrived * 1e9))
+            let made = HeadSample(
+                orientation: (ref.conjugate * q).normalized, rate: lastGyro, hostTime: Double(host) / 1e9, recentres: recentres
+            )
+            newest = made
+            out = made
+            to = sink
+        }
+        lock.unlock()
+        // Outside the lock, so the receiver may call back into the fusion.
+        if let made = out, let receiver = to { receiver(made) }
+    }
+
+    /// The fusion's step for one sample (the lock is held). True when the orientation moved on with it.
+    private func integrate(_ s: ImuSample, _ g: SIMD3<Double>, _ a: SIMD3<Double>) -> Bool {
         count += 1
         guard let last = lastTs else {
             lastTs = s.timestampNs
             firstTs = s.timestampNs
             levelFrom(a)
-            return
+            return false
         }
         let dt = Double(Int64(bitPattern: s.timestampNs &- last)) / 1e9
         lastTs = s.timestampNs
-        guard dt > 0, dt < 0.05 else { return }
+        guard dt > 0, dt < 0.05 else { return false }
         let an = (a * a).sum().squareRoot()
         gMag = gMag.map { 0.999 * $0 + 0.001 * an } ?? an
         learnBias(g, s.timestampNs)
@@ -83,9 +143,33 @@ public final class HeadFusion: @unchecked Sendable {
         let half = 0.5 * dt
         q = (q * Quat(1, w.x * half, w.y * half, w.z * half)).normalized
         if wantRecentre {
-            ref = Quat.aboutY(q.yaw - recentreYaw)
+            applyRecentre()
             wantRecentre = false
         }
+        return true
+    }
+
+    /// Makes the head's heading straight ahead (the lock is held). A recentre the user asked for with the head more
+    /// than recentreTiltMinDeg up or down takes that pitch as straight ahead too, never the roll (Pocket XR 1.2.13);
+    /// the fusion's own recentres keep the pitch the last one took.
+    private func applyRecentre() {
+        let f = q.rotate(SIMD3(0, 0, -1))
+        let headPitch = asin(min(1.0, max(-1.0, f.y)))
+        if recentreSetsTilt {
+            let past = abs(headPitch) > Self.recentreTiltMinDeg * Double.pi / 180
+            refPitch = (recentreFollowsTilt && past) ? headPitch : 0
+            recentreSetsTilt = false
+        }
+        var yaw = q.yaw
+        if abs(headPitch) >= Self.nearVerticalDeg * Double.pi / 180 {
+            // up x right: where the head faces along the floor.
+            let r = q.rotate(SIMD3(1, 0, 0))
+            let sideLength = (r.z * r.z + r.x * r.x).squareRoot()
+            if sideLength >= 0.2 { yaw = atan2(-r.z, r.x) }
+        }
+        let turn = Quat.aboutY(yaw - recentreYaw)
+        ref = refPitch == 0 ? turn : (turn * Quat.aboutX(refPitch)).normalized
+        recentres += 1
     }
 
     private func learnBias(_ g: SIMD3<Double>, _ ts: UInt64) {
@@ -135,11 +219,27 @@ public final class HeadFusion: @unchecked Sendable {
     }
 
     /// The head's heading becomes straight ahead, with the view turned [yawDeg] (left positive), so the panels' middle
-    /// comes in front of the head.
-    public func recentre(yawDeg: Double = 0) {
+    /// comes in front of the head. With [followTilt] and the head more than recentreTiltMinDeg up or down, the head's
+    /// pitch becomes straight ahead too, so the screens come to where the head looks. Takes effect with the next sample.
+    public func recentre(yawDeg: Double = 0, followTilt: Bool = false) {
         lock.lock(); defer { lock.unlock() }
         recentreYaw = yawDeg * .pi / 180
+        recentreFollowsTilt = followTilt
+        recentreSetsTilt = true
         wantRecentre = true
+    }
+
+    /// The newest sample: orientation, rate and host time together. Nil before the second report.
+    public func latest() -> HeadSample? {
+        lock.lock(); defer { lock.unlock() }
+        return newest
+    }
+
+    /// Every sample from now on is also handed to [receiver], on the thread that reports (HeadPose's predictor needs
+    /// each one, not only the newest). One receiver at a time; nil stops it.
+    public func setSampleSink(_ receiver: ((HeadSample) -> Void)?) {
+        lock.lock(); defer { lock.unlock() }
+        sink = receiver
     }
 
     /// The head's orientation relative to the recentred forward.

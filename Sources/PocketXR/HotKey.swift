@@ -4,22 +4,28 @@ import Foundation
 /// A key combination that works from any app (Carbon's RegisterEventHotKey, which needs no permission).
 final class HotKey {
     private var ref: EventHotKeyRef?
-    private var handler: EventHandlerRef?
-    private let action: () -> Void
+    private let id: UInt32
     private static var actions = [UInt32: () -> Void]()
     private static var nextID: UInt32 = 1
-    private let id: UInt32
+    /// One handler serves every hot key: it looks the pressed key's id up in [actions].
+    private static var handler: EventHandlerRef?
 
     init?(keyCode: UInt32, control: Bool = false, option: Bool = false, command: Bool = false, shift: Bool = false, action: @escaping () -> Void) {
-        self.action = action
         id = HotKey.nextID
         HotKey.nextID += 1
+        guard HotKey.installHandler() else { return nil }
         var mods: UInt32 = 0
         if control { mods |= UInt32(controlKey) }
         if option { mods |= UInt32(optionKey) }
         if command { mods |= UInt32(cmdKey) }
         if shift { mods |= UInt32(shiftKey) }
+        let hkID = EventHotKeyID(signature: OSType(0x5058_4B59), id: id) // "PXKY"
+        guard RegisterEventHotKey(keyCode, mods, hkID, GetApplicationEventTarget(), 0, &ref) == noErr else { return nil }
         HotKey.actions[id] = action
+    }
+
+    private static func installHandler() -> Bool {
+        if handler != nil { return true }
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let installed = InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
             var hk = EventHotKeyID()
@@ -28,14 +34,11 @@ final class HotKey {
             HotKey.actions[hk.id]?()
             return noErr
         }, 1, &spec, nil, &handler)
-        guard installed == noErr else { return nil }
-        let hkID = EventHotKeyID(signature: OSType(0x5058_4B59), id: id) // "PXKY"
-        guard RegisterEventHotKey(keyCode, mods, hkID, GetApplicationEventTarget(), 0, &ref) == noErr else { return nil }
+        return installed == noErr
     }
 
     deinit {
         if let ref { UnregisterEventHotKey(ref) }
-        if let handler { RemoveEventHandler(handler) }
         HotKey.actions[id] = nil
     }
 }
