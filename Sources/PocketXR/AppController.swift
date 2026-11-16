@@ -23,6 +23,8 @@ final class AppController: NSObject, NSMenuDelegate {
     private var settingsState = SettingsControl.State()
     private var hotKey: HotKey?
     private var quitting = false
+    private var displaysWereRemoved = false
+    private static let displayGoneGraceS = 8.0
 
     // Settings, kept between runs.
     private var screenCount: Int {
@@ -83,7 +85,37 @@ final class AppController: NSObject, NSMenuDelegate {
             if window != nil { plog("glasses display: gone") }
             window?.shut()
             window = nil
+            // 16 Nov 2026 (Mike unplugged the Aura and "the apps wont open on my mac screen anymore as if theres still
+            // another monitor connected"): with no glasses the virtual displays cannot be seen, so they go, and macOS
+            // moves their windows back to the Mac's own screen.
+            // Not at once: a 3D switch takes the glasses' display away for about 4 s (3.6 s seen on the Aura).
+            if displays != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.displayGoneGraceS) { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self, !self.quitting, self.displays != nil, NSScreen.glasses == nil else { return }
+                        plog("virtual displays: removed, the glasses' display has been gone \(Int(Self.displayGoneGraceS)) s")
+                        self.captures.forEach { $0.stop() }
+                        self.captures = []
+                        self.displays = nil
+                        self.displaysWereRemoved = true
+                    }
+                }
+            }
             setStatus(glasses == nil ? "Plug in your glasses." : "Waiting for the glasses' display…")
+            return
+        }
+        if displaysWereRemoved, Bundle.main.bundleURL.pathExtension == "app" {
+            // Virtual displays made a second time in one session mislead capture (FB17797423, see VirtualDisplays), so
+            // the glasses coming back starts Pocket XR afresh.
+            plog("glasses display: back; starting Pocket XR again for new virtual displays")
+            quitting = true
+            imu?.stop()
+            settings?.stop()
+            let open = Process()
+            open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            open.arguments = ["-n", Bundle.main.bundleURL.path]
+            try? open.run()
+            NSApp.terminate(nil)
             return
         }
         let size = screen.frame.size

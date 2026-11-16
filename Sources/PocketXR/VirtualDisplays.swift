@@ -41,7 +41,7 @@ final class VirtualDisplays {
             }
             let s = CGVirtualDisplaySettings()
             s.hiDPI = hiDPI ? 1 : 0
-            s.modes = [CGVirtualDisplayMode(width: width, height: height, refreshRate: 60)]
+            s.modes = [CGVirtualDisplayMode(width: UInt(width), height: UInt(height), refreshRate: 60)]
             guard display.apply(s) else {
                 plog("virtual display \(i + 1): its 1920x1080 mode was refused")
                 continue

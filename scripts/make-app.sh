@@ -7,7 +7,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if [ "${1:-}" = "universal" ]; then
+if [ "${1:-}" = "direct" ]; then
+  # Without SwiftPM (scripts/build-direct.sh), for a Mac whose command line tools cannot read Package.swift.
+  bash scripts/build-direct.sh
+  BIN=".build/direct/PocketXR"
+elif [ "${1:-}" = "universal" ]; then
   swift build -c release --arch arm64 --arch x86_64
   BIN=".build/apple/Products/Release/PocketXR"
 else

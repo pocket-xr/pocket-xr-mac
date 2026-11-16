@@ -15,6 +15,7 @@ public final class SettingsControl: @unchecked Sendable {
         public var anchor: Int?
         public var ultrawide: Int?
         public var busy = false
+        public init() {}
     }
 
     static let setGapS = 3.0
