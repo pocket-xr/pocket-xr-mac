@@ -312,7 +312,7 @@ struct ControlPanelSpaceCard: View {
     var body: some View {
         SettingsCard {
             if state.steady {
-                Text("In Steady mode the glasses show your screens side by side at a fixed size. Turn it off to arrange them.")
+                Text("In Steady mode the glasses show your screens side by side on one flat picture. Change their size here. Turn Steady mode off for layouts, distance and curve.")
                     .font(Font.lookNote)
                     .foregroundColor(Color.lookInk2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -320,16 +320,22 @@ struct ControlPanelSpaceCard: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
                     .padding(.bottom, 2)
-            }
-            Group {
+                ControlPanelSliderRow(
+                    "Size",
+                    value: $store.s.steadyZoom,
+                    range: SpaceSettings.steadyZoomRange,
+                    step: 0.05,
+                    valueText: "\(Int((store.s.steadyZoom * 100).rounded())) %"
+                )
+            } else {
+                // Arrangement, layout, size, distance and curve do nothing in Steady mode, so they are not shown
+                // there: the panel stays short enough for a laptop's screen.
                 arrangements
                 SettingsDivider()
                 layout
                 SettingsDivider()
                 sliders
             }
-            .disabled(state.steady)
-            .opacity(state.steady ? 0.38 : 1)
             SettingsDivider()
             switches
         }

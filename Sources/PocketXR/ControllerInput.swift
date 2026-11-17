@@ -256,6 +256,13 @@ final class ControllerInput {
     }
 
     private func resize(by amount: Double) {
+        if state.steady {
+            // In Steady mode size is the row's share of the glasses' picture.
+            let zoom: ClosedRange<Double> = SpaceSettings.steadyZoomRange
+            let next: Double = min(max(store.s.steadyZoom + amount / 40, zoom.lowerBound), zoom.upperBound)
+            if next != store.s.steadyZoom { store.s.steadyZoom = next }
+            return
+        }
         let range: ClosedRange<Double> = SpaceSettings.widthRange
         let width: Double = min(max(store.s.widthDeg + amount, range.lowerBound), range.upperBound)
         if width != store.s.widthDeg { store.s.widthDeg = width }

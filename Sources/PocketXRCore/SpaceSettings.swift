@@ -129,6 +129,9 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     /// Recentre brings it back to 0.
     public var offsetYawDeg = 0.0
     public var offsetPitchDeg = 0.0
+    /// Steady mode: how large the row of screens is drawn on the glasses' flat picture, 1 filling it. Smaller looks
+    /// further away; larger runs off the sides (Head scroll slides it).
+    public var steadyZoom = 1.0
 
     // The picture
     /// 3D side by side: each eye its own picture.
@@ -190,6 +193,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     public static let delayRange = 0.0...40.0
     public static let offsetYawRange = -90.0...90.0
     public static let maxPinnedApps = 10
+    public static let steadyZoomRange = 0.4...1.6
     public static let offsetPitchRange = -40.0...40.0
 
     /// Every value brought inside its range (a hand-edited or older file).
@@ -205,6 +209,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         s.displayDelayMs = min(max(s.displayDelayMs, Self.delayRange.lowerBound), Self.delayRange.upperBound)
         s.offsetYawDeg = min(max(s.offsetYawDeg, Self.offsetYawRange.lowerBound), Self.offsetYawRange.upperBound)
         s.offsetPitchDeg = min(max(s.offsetPitchDeg, Self.offsetPitchRange.lowerBound), Self.offsetPitchRange.upperBound)
+        s.steadyZoom = min(max(s.steadyZoom, Self.steadyZoomRange.lowerBound), Self.steadyZoomRange.upperBound)
         if s.pinnedApps.count > Self.maxPinnedApps { s.pinnedApps = Array(s.pinnedApps.prefix(Self.maxPinnedApps)) }
         return s
     }
@@ -248,5 +253,6 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         controllerMode = try c.decodeIfPresent(ControllerMode.self, forKey: .controllerMode) ?? d.controllerMode
         handsOn = try c.decodeIfPresent(Bool.self, forKey: .handsOn) ?? d.handsOn
         handAim = try c.decodeIfPresent(HandAim.self, forKey: .handAim) ?? d.handAim
+        steadyZoom = try c.decodeIfPresent(Double.self, forKey: .steadyZoom) ?? d.steadyZoom
     }
 }

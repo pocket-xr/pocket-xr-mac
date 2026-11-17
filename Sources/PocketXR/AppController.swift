@@ -118,12 +118,12 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         // The launcher's list of apps is read now, so its first opening is instant.
         _ = launcher.isOpen
         grab = SpaceGrab(
-            enabled: { [weak self] in (self?.store.s.grabKeys ?? false) && !(self?.state.steady ?? true) && self?.displays != nil },
+            enabled: { [weak self] in (self?.store.s.grabKeys ?? false) && self?.displays != nil },
             move: { [weak self] yaw, pitch in self?.nudgeSpace(yawDeg: yaw, pitchDeg: pitch) },
             resize: { [weak self] by in
                 guard let self else { return }
                 var s = self.store.s
-                s.widthDeg += by
+                if self.state.steady { s.steadyZoom += by / 40 } else { s.widthDeg += by }
                 self.store.s = s.clamped
             })
         if Tour.opensByItself(tourSeen: store.s.tourSeen) {
@@ -374,7 +374,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             let hfov = 2 * atan(tan(fov * .pi / 360) * viewAspect) * 180 / .pi
             let n = Double(max(aspects.count, 1))
             let gap = 0.6
-            let each = max(4, (hfov * 0.96 - gap * (n - 1)) / n)
+            // Bigger and smaller in Steady mode: the row drawn larger or smaller on the glasses' picture.
+            let each = max(2, (hfov * 0.96 - gap * (n - 1)) / n * s.steadyZoom)
             placements = SpaceLayout.row(aspects: aspects, widthDeg: each, distance: SpaceLayout.defaultDistance, gapDeg: gap)
         } else {
             placements = SpaceLayout.arrange(layout: s.layout, aspects: aspects, widthDeg: s.widthDeg, distance: s.distance, curve: s.curve)
@@ -544,6 +545,17 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
 
     func adjust(_ a: SpaceAdjust) {
         var s = store.s
+        if state.steady {
+            // The glasses hold one flat picture: size is the only thing to change, and nearer or further are the
+            // same thing to the eye. Layout and curve do not apply.
+            switch a {
+            case .bigger, .nearer: s.steadyZoom += 0.1
+            case .smaller, .further: s.steadyZoom -= 0.1
+            case .moreCurve, .lessCurve, .nextLayout: return
+            }
+            store.s = s.clamped
+            return
+        }
         switch a {
         case .bigger: s.widthDeg += 5
         case .smaller: s.widthDeg -= 5

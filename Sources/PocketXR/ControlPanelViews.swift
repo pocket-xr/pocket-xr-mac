@@ -519,7 +519,7 @@ struct ControlPanelPad: View {
             .accessibilityLabel(Text("Your floating screens, seen from the front"))
             .accessibilityValue(Text(spoken))
             if !isStatic {
-                ControlPanelScrollCatcher(enabled: !steady) { dy in scrolled(dy) }
+                ControlPanelScrollCatcher(enabled: true) { dy in scrolled(dy) }
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -538,7 +538,7 @@ struct ControlPanelPad: View {
     @ViewBuilder
     private var words: some View {
         if steady {
-            Text("Steady mode: the glasses hold the picture. Recentre still works.")
+            Text("Steady mode: the glasses hold the picture. − and + change its size.")
                 .font(Font.lookNote)
                 .foregroundColor(Color.lookInk)
                 .multilineTextAlignment(.center)
@@ -581,13 +581,16 @@ struct ControlPanelPad: View {
                 right: { actions.target?.adjust(.bigger) }
             )
             Spacer(minLength: 8)
-            ControlPanelSmallButton("Nearer") { actions.target?.adjust(.nearer) }
-            ControlPanelSmallButton("Further") { actions.target?.adjust(.further) }
+            // A flat picture has no nearer or further: in Steady mode only the size changes.
+            Group {
+                ControlPanelSmallButton("Nearer") { actions.target?.adjust(.nearer) }
+                ControlPanelSmallButton("Further") { actions.target?.adjust(.further) }
+            }
+            .disabled(steady)
+            .opacity(steady ? 0.4 : 1)
         }
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .disabled(steady)
-        .opacity(steady ? 0.4 : 1)
     }
 
     private func drag(scale: Double) -> some Gesture {
@@ -612,7 +615,12 @@ struct ControlPanelPad: View {
     private var pinch: some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                guard !steady else { return }
+                if steady {
+                    let from: Double = pinchFrom ?? store.s.steadyZoom
+                    if pinchFrom == nil { pinchFrom = from }
+                    setSteadyZoom(from * Double(value))
+                    return
+                }
                 let from: Double = pinchFrom ?? store.s.widthDeg
                 if pinchFrom == nil { pinchFrom = from }
                 setWidth(from * Double(value))
@@ -621,8 +629,17 @@ struct ControlPanelPad: View {
     }
 
     private func scrolled(_ dy: CGFloat) {
-        guard !steady else { return }
+        if steady {
+            setSteadyZoom(store.s.steadyZoom + Double(dy) * Self.degreesPerScroll / 40)
+            return
+        }
         setWidth(store.s.widthDeg + Double(dy) * Self.degreesPerScroll)
+    }
+
+    private func setSteadyZoom(_ wanted: Double) {
+        let range: ClosedRange<Double> = SpaceSettings.steadyZoomRange
+        let next: Double = min(max(wanted, range.lowerBound), range.upperBound)
+        if next != store.s.steadyZoom { store.s.steadyZoom = next }
     }
 
     private func setWidth(_ wanted: Double) {
