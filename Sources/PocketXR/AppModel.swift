@@ -120,6 +120,10 @@ final class AppState: ObservableObject {
     /// macOS permissions: the camera (hand tracking), and Accessibility (a pinch clicking for you).
     @Published var cameraAllowed = false
     @Published var accessibilityAllowed = false
+    /// Shortcuts macOS would not give Pocket XR (by id): another app may already use their keys.
+    @Published var shortcutsTaken = Set<String>()
+    /// Goes up when a shortcut's keys change, so the windows show the new keys.
+    @Published var shortcutsVersion = 0
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
 }
 
@@ -184,15 +188,41 @@ protocol AppActions: AnyObject {
     func openDisplaySettings()
     func restartApp()
     func quit()
+    /// Gives a shortcut new keys (Carbon modifier mask, [label] as shown, such as "⌃⌥R"). Nil when it was done,
+    /// else why not, in plain words.
+    func changeShortcut(id: String, keyCode: UInt32, modifiers: UInt32, label: String) -> String?
+    /// Puts a shortcut back to the keys it comes with ([id] nil: every shortcut).
+    func resetShortcut(_ id: String?)
+    /// Lets go of every shortcut while new keys are being pressed in Settings (so Pocket XR's own keys can be pressed
+    /// there too), or takes them again.
+    func pauseShortcuts(_ paused: Bool)
 }
 
-/// The shortcuts, in one place for the menu, the settings window and the tour to show.
+/// The shortcuts, in one place for the menu, the settings window and the tour to show. Each comes as Control-Option
+/// and a key; the keys can be changed in Settings (ShortcutChoices).
 struct Shortcut: Identifiable {
     let id: String
     let title: String
-    /// As shown: "⌃⌥R".
-    let keys: String
-    let keyCode: UInt32
+    /// The keys it comes with, as shown: "⌃⌥R".
+    let usualKeys: String
+    let usualKeyCode: UInt32
+
+    /// Carbon's modifier mask (Carbon.HIToolbox): control 0x1000, option 0x0800, shift 0x0200, command 0x0100.
+    static let control: UInt32 = 0x1000, option: UInt32 = 0x0800, shift: UInt32 = 0x0200, command: UInt32 = 0x0100
+
+    init(id: String, title: String, keys: String, keyCode: UInt32) {
+        self.id = id
+        self.title = title
+        usualKeys = keys
+        usualKeyCode = keyCode
+    }
+
+    private var chosen: ShortcutChoice? { ShortcutChoices.get(id) }
+    /// The keys in use now, as shown: the person's choice, else the usual ones.
+    var keys: String { chosen?.label ?? usualKeys }
+    var keyCode: UInt32 { chosen?.keyCode ?? usualKeyCode }
+    var modifiers: UInt32 { chosen?.modifiers ?? (Shortcut.control | Shortcut.option) }
+    var changed: Bool { chosen != nil }
 
     static let all: [Shortcut] = [
         Shortcut(id: "recentre", title: "Recentre", keys: "⌃⌥R", keyCode: 15),
@@ -210,4 +240,85 @@ struct Shortcut: Identifiable {
         Shortcut(id: "pocket", title: "Pocket mode", keys: "⌃⌥K", keyCode: 40),
         Shortcut(id: "hands", title: "Hand tracking", keys: "⌃⌥H", keyCode: 4),
     ]
+}
+
+/// One shortcut's chosen keys.
+struct ShortcutChoice: Codable, Equatable {
+    var keyCode: UInt32
+    /// Carbon's modifier mask.
+    var modifiers: UInt32
+    /// As shown, such as "⌃⌥R".
+    var label: String
+}
+
+/// The keys chosen for Pocket XR's shortcuts, where they differ from the ones it comes with. Kept in UserDefaults apart
+/// from the settings (which Pocket XR for Windows shares): Mac keys mean nothing on a PC. Added 17 Nov 2026 after
+/// Pocket XR for Windows found shortcuts another app already held; not yet run on a Mac.
+enum ShortcutChoices {
+    static let key = "shortcut_keys_v1"
+
+    static func all() -> [String: ShortcutChoice] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let map = try? JSONDecoder().decode([String: ShortcutChoice].self, from: data) else { return [:] }
+        return map
+    }
+
+    static func get(_ id: String) -> ShortcutChoice? { all()[id] }
+
+    /// [choice] nil, or the usual keys, takes the shortcut back to them.
+    static func set(_ id: String, _ choice: ShortcutChoice?) {
+        var map = all()
+        map[id] = choice
+        if map.isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else if let data = try? JSONEncoder().encode(map) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    static func resetAll() { UserDefaults.standard.removeObject(forKey: key) }
+
+    static var anyChosen: Bool { !all().isEmpty }
+}
+
+/// A key's name as Pocket XR shows it in a shortcut.
+enum ShortcutKeyName {
+    static func name(keyCode: UInt16, characters: String?) -> String {
+        switch keyCode {
+        case 49: return "Space"
+        case 36: return "↩"
+        case 48: return "⇥"
+        case 51: return "⌫"
+        case 117: return "⌦"
+        case 123: return "←"
+        case 124: return "→"
+        case 125: return "↓"
+        case 126: return "↑"
+        case 122: return "F1"
+        case 120: return "F2"
+        case 99: return "F3"
+        case 118: return "F4"
+        case 96: return "F5"
+        case 97: return "F6"
+        case 98: return "F7"
+        case 100: return "F8"
+        case 101: return "F9"
+        case 109: return "F10"
+        case 103: return "F11"
+        case 111: return "F12"
+        default:
+            let text: String = (characters ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            return text.isEmpty ? "key \(keyCode)" : text
+        }
+    }
+
+    /// The modifier symbols for Carbon's mask, in the Mac's order: ⌃⌥⇧⌘.
+    static func symbols(_ modifiers: UInt32) -> String {
+        var text = ""
+        if modifiers & Shortcut.control != 0 { text += "⌃" }
+        if modifiers & Shortcut.option != 0 { text += "⌥" }
+        if modifiers & Shortcut.shift != 0 { text += "⇧" }
+        if modifiers & Shortcut.command != 0 { text += "⌘" }
+        return text
+    }
 }

@@ -10,15 +10,20 @@ final class HotKey {
     /// One handler serves every hot key: it looks the pressed key's id up in [actions].
     private static var handler: EventHandlerRef?
 
-    init?(keyCode: UInt32, control: Bool = false, option: Bool = false, command: Bool = false, shift: Bool = false, action: @escaping () -> Void) {
-        id = HotKey.nextID
-        HotKey.nextID += 1
-        guard HotKey.installHandler() else { return nil }
+    convenience init?(keyCode: UInt32, control: Bool = false, option: Bool = false, command: Bool = false, shift: Bool = false, action: @escaping () -> Void) {
         var mods: UInt32 = 0
         if control { mods |= UInt32(controlKey) }
         if option { mods |= UInt32(optionKey) }
         if command { mods |= UInt32(cmdKey) }
         if shift { mods |= UInt32(shiftKey) }
+        self.init(keyCode: keyCode, modifiers: mods, action: action)
+    }
+
+    /// [modifiers] is Carbon's mask (controlKey, optionKey, cmdKey, shiftKey).
+    init?(keyCode: UInt32, modifiers mods: UInt32, action: @escaping () -> Void) {
+        id = HotKey.nextID
+        HotKey.nextID += 1
+        guard HotKey.installHandler() else { return nil }
         let hkID = EventHotKeyID(signature: OSType(0x5058_4B59), id: id) // "PXKY"
         guard RegisterEventHotKey(keyCode, mods, hkID, GetApplicationEventTarget(), 0, &ref) == noErr else { return nil }
         HotKey.actions[id] = action

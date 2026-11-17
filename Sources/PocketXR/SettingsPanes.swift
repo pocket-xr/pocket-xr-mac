@@ -590,12 +590,20 @@ struct SettingsSupportCard: View {
 
 struct SettingsShortcutsPane: View {
     @ObservedObject var store: SettingsStore
+    @ObservedObject var state: AppState
+    let actions: SettingsActionsRef
+    /// The shortcut whose new keys are being waited for.
+    @State private var recording: String? = nil
+    /// What was said about a shortcut's last change (it was refused, and why), by id.
+    @State private var said: [String: String] = [:]
+    @State private var monitor: Any? = nil
 
     var body: some View {
         SettingsPaneScaffold(.shortcuts) {
             switchCard.settingsArrive(1)
             listCard.settingsArrive(2)
         }
+        .onDisappear { stopRecording() }
     }
 
     private var switchCard: some View {
@@ -619,20 +627,146 @@ struct SettingsShortcutsPane: View {
     }
 
     private var listCard: some View {
+        // Read so the list is drawn again when a shortcut's keys change.
+        let version: Int = state.shortcutsVersion
         let all: [Shortcut] = Shortcut.all
-        let last: String = all.last?.id ?? ""
+        let anyChosen: Bool = ShortcutChoices.anyChosen
         return SettingsCard("Shortcuts") {
             ForEach(all) { shortcut in
-                SettingsRow(shortcut.title) {
-                    SettingsKeys(keys: shortcut.keys)
-                }
-                if shortcut.id != last {
-                    SettingsDivider()
+                shortcutRow(shortcut)
+                if shortcut.id != all.last?.id || anyChosen { SettingsDivider() }
+            }
+            if anyChosen {
+                SettingsRow("Changed keys") {
+                    SettingsButton("Use the usual keys for all", symbol: "arrow.uturn.backward") {
+                        said = [:]
+                        actions.target?.resetShortcut(nil)
+                    }
                 }
             }
         }
+        .id(version)
         .opacity(store.s.shortcuts ? 1 : 0.45)
         .animation(Animation.lookEnter(), value: store.s.shortcuts)
+    }
+
+    private func shortcutRow(_ shortcut: Shortcut) -> some View {
+        let listening: Bool = recording == shortcut.id
+        var note: String? = nil
+        var warn: Bool = false
+        if listening {
+            note = said[shortcut.id] ?? "With Control, Option or Command. Esc cancels."
+            warn = said[shortcut.id] != nil
+        } else if let text = said[shortcut.id] {
+            note = text
+            warn = true
+        } else if state.shortcutsTaken.contains(shortcut.id) {
+            note = "macOS would not give Pocket XR these keys, so this one does not work."
+            warn = true
+        }
+        return SettingsShortcutRowLayout(title: shortcut.title, note: note, warn: warn) {
+            HStack(spacing: 8) {
+                if listening {
+                    Text("Press the new keys…")
+                        .font(Font.lookLine)
+                        .foregroundColor(Color.lookHeld)
+                } else {
+                    SettingsKeys(keys: shortcut.keys)
+                }
+                SettingsButton(listening ? "Cancel" : "Change") {
+                    if listening { stopRecording() } else { startRecording(shortcut.id) }
+                }
+                if shortcut.changed && !listening {
+                    SettingsIconButton(symbol: "arrow.uturn.backward", label: "Use \(shortcut.usualKeys) again") {
+                        said[shortcut.id] = nil
+                        actions.target?.resetShortcut(shortcut.id)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Waits for the next keys pressed in this window. Pocket XR lets go of its own shortcuts meanwhile, so they can
+    /// be pressed here too (macOS would hand them to Pocket XR's shortcuts first).
+    private func startRecording(_ id: String) {
+        stopRecording()
+        said[id] = nil
+        recording = id
+        actions.target?.pauseShortcuts(true)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            take(event, for: id)
+        }
+    }
+
+    private func stopRecording() {
+        if let m = monitor { NSEvent.removeMonitor(m) }
+        monitor = nil
+        if recording != nil {
+            recording = nil
+            actions.target?.pauseShortcuts(false)
+        }
+    }
+
+    /// One key press while waiting: Esc cancels, a key with Control, Option or Command is taken. Returns nil, so the
+    /// press goes no further.
+    private func take(_ event: NSEvent, for id: String) -> NSEvent? {
+        if event.keyCode == 53 {
+            stopRecording()
+            return nil
+        }
+        let flags: NSEvent.ModifierFlags = event.modifierFlags.intersection([.control, .option, .shift, .command])
+        var mods: UInt32 = 0
+        if flags.contains(.control) { mods |= Shortcut.control }
+        if flags.contains(.option) { mods |= Shortcut.option }
+        if flags.contains(.shift) { mods |= Shortcut.shift }
+        if flags.contains(.command) { mods |= Shortcut.command }
+        let label: String = ShortcutKeyName.symbols(mods) + ShortcutKeyName.name(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers)
+        guard mods & (Shortcut.control | Shortcut.option | Shortcut.command) != 0 else {
+            said[id] = "\(label) on its own would stop that key typing. Add Control, Option or Command. Esc cancels."
+            return nil
+        }
+        stopRecording()
+        if let why = actions.target?.changeShortcut(id: id, keyCode: UInt32(event.keyCode), modifiers: mods, label: label) {
+            said[id] = why
+        }
+        return nil
+    }
+}
+
+/// A settings row whose note can be a warning (amber), with its control on the right. The same sizes as SettingsRow.
+struct SettingsShortcutRowLayout<Trailing: View>: View {
+    let title: String
+    let note: String?
+    let warn: Bool
+    let trailing: Trailing
+
+    init(title: String, note: String?, warn: Bool, @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.note = note
+        self.warn = warn
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(Font.lookLine)
+                    .foregroundColor(Color.lookInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let note {
+                    Text(note)
+                        .font(Font.lookNote)
+                        .foregroundColor(warn ? Color.lookWarn : Color.lookInk2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 12)
+            trailing
+        }
+        .padding(.horizontal, SettingsMetrics.inset)
+        .padding(.vertical, note == nil ? 6 : 10)
+        .frame(minHeight: SettingsMetrics.row)
     }
 }
 

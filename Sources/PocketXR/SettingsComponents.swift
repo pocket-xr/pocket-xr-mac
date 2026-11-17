@@ -749,7 +749,7 @@ struct SettingsKeys: View {
     let keys: String
 
     var body: some View {
-        let parts: [String] = keys.map { String($0) }
+        let parts: [String] = SettingsKeys.caps(keys)
         return HStack(spacing: 4) {
             ForEach(Array(parts.enumerated()), id: \.offset) { pair in
                 SettingsKeyCap(text: pair.element)
@@ -759,9 +759,22 @@ struct SettingsKeys: View {
         .accessibilityLabel(Text(SettingsKeys.spoken(keys)))
     }
 
+    /// One cap per modifier symbol, and the rest as one key: "⌃⌥Space" is ⌃, ⌥ and Space, "⌃⌥F5" is ⌃, ⌥ and F5.
+    static func caps(_ keys: String) -> [String] {
+        let modifiers: Set<Character> = ["⌃", "⌥", "⇧", "⌘"]
+        var parts: [String] = []
+        var rest = Substring(keys)
+        while let c = rest.first, modifiers.contains(c) {
+            parts.append(String(c))
+            rest = rest.dropFirst()
+        }
+        if !rest.isEmpty { parts.append(String(rest)) }
+        return parts
+    }
+
     /// The keys as VoiceOver should say them.
     static func spoken(_ keys: String) -> String {
-        let words: [String] = keys.map { c -> String in
+        let words: [String] = caps(keys).map { c -> String in
             switch c {
             case "⌃": return "Control"
             case "⌥": return "Option"
@@ -773,7 +786,7 @@ struct SettingsKeys: View {
             case "[": return "left bracket"
             case ".": return "full stop"
             case ",": return "comma"
-            default: return String(c)
+            default: return c
             }
         }
         return words.joined(separator: " ")

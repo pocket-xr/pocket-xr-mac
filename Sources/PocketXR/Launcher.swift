@@ -508,6 +508,8 @@ final class LauncherController: NSObject, NSWindowDelegate {
     private var panel: LauncherPanel?
     private var open = false
     private var openedAt: TimeInterval = 0
+    /// When the launcher last closed because the user went to another window.
+    private var leftAt: TimeInterval = -1_000
     private var timer: Timer?
     /// The app that was in front when the launcher opened; it gets the keyboard back if nothing is opened.
     private var before: NSRunningApplication?
@@ -526,6 +528,10 @@ final class LauncherController: NSObject, NSWindowDelegate {
     /// Shows the launcher on [screen] (a floating screen), or hides it when it is open. Open on another screen, it
     /// moves to [screen] instead.
     func toggle(on screen: NSScreen?) {
+        // Pressing the control panel's Launcher button first makes the panel the key window, which closes the launcher
+        // (the user went elsewhere); the press itself then arrives. It was meant to close the launcher, and it has.
+        // Seen in Pocket XR for Windows, 17 Nov 2026: the button closed and at once reopened it.
+        if !open, ProcessInfo.processInfo.systemUptime - leftAt < 0.5 { return }
         if open {
             if let screen, let w = panel, w.frame != screen.frame {
                 place(w, on: screen)
@@ -643,5 +649,6 @@ final class LauncherController: NSObject, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
         guard open, ProcessInfo.processInfo.systemUptime - openedAt > 0.3 else { return }
         close(.handedOver)
+        leftAt = ProcessInfo.processInfo.systemUptime
     }
 }

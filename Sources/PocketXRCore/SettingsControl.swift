@@ -110,7 +110,23 @@ public final class SettingsControl: @unchecked Sendable {
     public func apply() { enqueue(.apply) }
 
     /// Puts the glasses back for normal use, then calls [done] (on the settings thread).
-    public func restore(done: @escaping () -> Void) { enqueue(.restore(done)) }
+    public func restore(done: @escaping () -> Void) {
+        // Quitting: setting the glasses up no longer matters, and must not run first. Seen on Windows, 17 Nov 2026:
+        // the glasses reconnected a second before a quit, and the set-up it queued asked for 3D after the quit.
+        jobsLock.lock()
+        leaving = true
+        jobs.removeAll(where: { (j: Job) -> Bool in
+            switch j {
+            case .apply, .steady: return true
+            default: return false
+            }
+        })
+        jobs.insert(.restore(done), at: 0)
+        jobsLock.unlock()
+    }
+
+    /// The glasses are being put back for a quit: a new link sets nothing up.
+    private var leaving = false
 
     /// Queues entering or leaving Steady mode. State.steady turns true when the whole sequence has completed, and
     /// false when it has been left. Only on glasses that are offered it ([Glasses.steadyCapable]); elsewhere nothing
@@ -208,7 +224,8 @@ public final class SettingsControl: @unchecked Sendable {
         sbsTriesUsed = 0
         sbsFirstAt = nil
         read()
-        if queueApply { enqueue(.apply) }
+        jobsLock.lock(); let quitting = leaving; jobsLock.unlock()
+        if queueApply && !quitting { enqueue(.apply) }
         return true
     }
 

@@ -378,7 +378,7 @@ struct SettingsPaneHost: View {
         case .glasses: SettingsGlassesPane(store: store, state: state, actions: actions)
         case .hands: SettingsPaneScaffold(.hands) { HandsSettingsSection(store: store, state: state, actions: actions) }
         case .controls: SettingsPaneScaffold(.controls) { ControllerSettingsSection(store: store, state: state, actions: actions).settingsArrive(1) }
-        case .shortcuts: SettingsShortcutsPane(store: store)
+        case .shortcuts: SettingsShortcutsPane(store: store, state: state, actions: actions)
         case .help: SettingsHelpPane(store: store, state: state, actions: actions)
         }
     }

@@ -854,17 +854,67 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
 
     private func registerShortcuts() {
         hotKeys.removeAll()
-        guard store.s.shortcuts else { return }
-        for sc in Shortcut.all {
-            let id = sc.id
-            if let k = HotKey(keyCode: sc.keyCode, control: true, option: true, action: { [weak self] in
-                Task { @MainActor in self?.shortcut(id) }
-            }) {
-                hotKeys.append(k)
-            } else {
-                plog("shortcut \(sc.keys) (\(sc.title)): macOS would not register it")
+        var taken = Set<String>()
+        if store.s.shortcuts, !shortcutsPaused {
+            for sc in Shortcut.all {
+                let id = sc.id
+                if let k = HotKey(keyCode: sc.keyCode, modifiers: sc.modifiers, action: { [weak self] in
+                    Task { @MainActor in self?.shortcut(id) }
+                }) {
+                    hotKeys.append(k)
+                } else {
+                    plog("shortcut \(sc.keys) (\(sc.title)): macOS would not register it")
+                    taken.insert(id)
+                }
             }
         }
+        if !shortcutsPaused, taken != state.shortcutsTaken { state.shortcutsTaken = taken }
+    }
+
+    /// True while Settings is waiting for new keys: every shortcut is let go meanwhile.
+    private var shortcutsPaused = false
+
+    func pauseShortcuts(_ paused: Bool) {
+        guard paused != shortcutsPaused else { return }
+        shortcutsPaused = paused
+        registerShortcuts()
+    }
+
+    func changeShortcut(id: String, keyCode: UInt32, modifiers: UInt32, label: String) -> String? {
+        guard let sc = Shortcut.all.first(where: { $0.id == id }) else { return nil }
+        guard modifiers & (Shortcut.control | Shortcut.option | Shortcut.command) != 0 else {
+            return "Use Control, Option or Command with it."
+        }
+        if let clash = Shortcut.all.first(where: { $0.id != id && $0.keyCode == keyCode && $0.modifiers == modifiers }) {
+            return "\(label) is already \(clash.title)."
+        }
+        // Pocket XR's own keys are let go first, so a refusal here is someone else's. The test key goes as soon as it
+        // is made (HotKey lets go of its keys when it goes).
+        hotKeys.removeAll()
+        let free: Bool = HotKey(keyCode: keyCode, modifiers: modifiers, action: {}) != nil
+        if !free {
+            registerShortcuts()
+            return "macOS would not give Pocket XR \(label): another app may use it. Choose other keys."
+        }
+        let usual: Bool = keyCode == sc.usualKeyCode && modifiers == (Shortcut.control | Shortcut.option)
+        ShortcutChoices.set(id, usual ? nil : ShortcutChoice(keyCode: keyCode, modifiers: modifiers, label: label))
+        plog("shortcut \(sc.title): now \(label)")
+        registerShortcuts()
+        state.shortcutsVersion += 1
+        updateMenu()
+        return nil
+    }
+
+    func resetShortcut(_ id: String?) {
+        if let id {
+            ShortcutChoices.set(id, nil)
+        } else {
+            ShortcutChoices.resetAll()
+        }
+        plog("shortcut \(id ?? "every one"): back to the usual keys")
+        registerShortcuts()
+        state.shortcutsVersion += 1
+        updateMenu()
     }
 
     private func shortcut(_ id: String) {
