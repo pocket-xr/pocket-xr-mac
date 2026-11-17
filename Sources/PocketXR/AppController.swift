@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import Combine
 import Metal
@@ -15,6 +16,11 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private lazy var settingsWindow = SettingsWindowController(store: store, state: state, actions: self)
     private lazy var tourWindow = TourWindowController(store: store, state: state, actions: self)
     private lazy var controlPanel = ControlPanelController(store: store, state: state, actions: self)
+    private lazy var launcher = LauncherController(store: store, state: state, actions: self)
+    private lazy var pocket = PocketMode(state: state, actions: self)
+    private lazy var controllerInput = ControllerInput(store: store, state: state, actions: self)
+    private lazy var hands = HandTracking(store: store, state: state, actions: self)
+    private var panelShownBeforePocket = false
     private var edgeHint: EdgeHint?
     private var grab: SpaceGrab?
 
@@ -108,6 +114,9 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         RunLoop.main.add(t, forMode: .common)
         statusTimer = t
         if store.s.panelAtStart { openControlPanel() }
+        controllerInput.start()
+        // The launcher's list of apps is read now, so its first opening is instant.
+        _ = launcher.isOpen
         grab = SpaceGrab(
             enabled: { [weak self] in (self?.store.s.grabKeys ?? false) && !(self?.state.steady ?? true) && self?.displays != nil },
             move: { [weak self] yaw, pitch in self?.nudgeSpace(yawDeg: yaw, pitchDeg: pitch) },
@@ -187,8 +196,9 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         state.steady = false
         state.linkOpen = false
         recompute()
-        guard let g else { return }
+        guard let g else { hands.stop(); return }
         startTracking(g)
+        if store.s.handsOn { hands.start() }
         if g.controlLink {
             let s = SettingsControl(glasses: g) { [weak self] st in
                 Task { @MainActor in
@@ -438,6 +448,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         guard !quitting else { return }
         trackPointer()
         publishDisplayTiles()
+        let trusted = AXIsProcessTrusted()
+        if trusted != state.accessibilityAllowed { state.accessibilityAllowed = trusted }
+        let camera = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+        if camera != state.cameraAllowed { state.cameraAllowed = camera }
         updateEdgeHint()
         state.fps = window?.glassesView.fps ?? 0
         state.capturing = captures.filter { $0.texture != nil }.count
@@ -558,6 +572,78 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     func openTour() { tourWindow.show() }
 
     func openControlPanel() { controlPanel.show() }
+
+    // MARK: launcher, Pocket mode, hands
+
+    func toggleLauncher() {
+        guard let screens = displays?.screens, !screens.isEmpty else { return }
+        let id = screens[min(pointerScreen ?? 0, screens.count - 1)].id
+        launcher.toggle(on: NSScreen.screens.first { $0.displayID == id })
+    }
+
+    func setPocketMode(_ on: Bool) {
+        guard on != state.pocketMode else { return }
+        // With no floating screen there is nowhere for the pointer to be.
+        if on, displays == nil { return }
+        plog("Pocket mode: \(on ? "on" : "off")")
+        // The control panel is where it was when the Mac's screen comes back (it was found gone, 16 Nov 2026).
+        if on { panelShownBeforePocket = controlPanel.isVisible }
+        pocket.set(on)
+        if !on, panelShownBeforePocket {
+            plog("Pocket mode: the control panel was \(controlPanel.isVisible ? "still open" : "gone"), shown again")
+            controlPanel.show()
+        }
+    }
+
+    func setHands(_ on: Bool) {
+        plog("hand tracking: asked \(on ? "on" : "off")")
+        if on { hands.start() } else { hands.stop() }
+    }
+
+    @discardableResult
+    func aimPointer(headYawDeg: Double, headPitchDeg: Double) -> Bool {
+        // In Steady mode the glasses place the picture themselves, and the app does not know where it sits.
+        guard !state.steady, let pose = headPose else { return false }
+        let yp = pose.yawPitchDeg
+        let head = Quat.aboutY(yp.yaw * .pi / 180) * Quat.aboutX(yp.pitch * .pi / 180)
+        let ray = head * (Quat.aboutY(headYawDeg * .pi / 180) * Quat.aboutX(headPitchDeg * .pi / 180))
+        guard let hit = LookTarget.hit(head: ray, panels: placements) else { return false }
+        warpPointer(toScreen: hit.index, u: hit.u, v: hit.v)
+        return true
+    }
+
+    @discardableResult
+    func placePointer(u: Double, v: Double) -> Bool {
+        guard let screens = displays?.screens, !screens.isEmpty else { return false }
+        var index = min(pointerScreen ?? 0, screens.count - 1)
+        if !state.steady, let pose = headPose {
+            let yp = pose.yawPitchDeg
+            let head = Quat.aboutY(yp.yaw * .pi / 180) * Quat.aboutX(yp.pitch * .pi / 180)
+            if let hit = LookTarget.hit(head: head, panels: placements), hit.index < screens.count { index = hit.index }
+        }
+        warpPointer(toScreen: index, u: min(max(u, 0.002), 0.998), v: min(max(v, 0.002), 0.998))
+        return true
+    }
+
+    func pointerButton(down: Bool) {
+        guard AXIsProcessTrusted(), let at = CGEvent(source: nil)?.location else { return }
+        let e = CGEvent(mouseEventSource: nil, mouseType: down ? .leftMouseDown : .leftMouseUp, mouseCursorPosition: at, mouseButton: .left)
+        e?.post(tap: .cghidEventTap)
+    }
+
+    func pointerScroll(dx: Double, dy: Double) {
+        guard AXIsProcessTrusted() else { return }
+        let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: Int32(dy.rounded()), wheel2: Int32(dx.rounded()), wheel3: 0)
+        e?.post(tap: .cghidEventTap)
+    }
+
+    func requestAccessibility() {
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
 
     func nudgeSpace(yawDeg: Double, pitchDeg: Double) {
         guard !state.steady else { return }
@@ -680,6 +766,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private func leave(then: @escaping @MainActor () -> Void) {
         guard !quitting else { return }
         quitting = true
+        // Nothing of Pocket XR's is left over the Mac's screen, and the camera is let go.
+        pocket.set(false)
+        launcher.close()
+        hands.stop()
         state.statusLine = "Putting the glasses back…"
         updateMenu()
         captures.forEach { $0.stop() }
@@ -738,6 +828,9 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         switch id {
         case "recentre": recentre()
         case "steady": setSteady(!state.steady)
+        case "launcher": toggleLauncher()
+        case "pocket": setPocketMode(!state.pocketMode)
+        case "hands": setHands(!state.handsRunning)
         case "bigger": adjust(.bigger)
         case "smaller": adjust(.smaller)
         case "nearer": adjust(.nearer)
@@ -791,6 +884,9 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             menu.addItem(item("Restart Pocket XR for the new screens", #selector(menuRestart)))
         }
         menu.addItem(item("Open the control panel", #selector(menuPanel)))
+        menu.addItem(item("Launcher" + shortcutHint("launcher"), #selector(menuLauncher), on: state.launcherOpen, enabled: state.virtualScreens > 0))
+        menu.addItem(item("Pocket mode" + shortcutHint("pocket"), #selector(menuPocket), on: state.pocketMode, enabled: state.virtualScreens > 0))
+        menu.addItem(item("Hand tracking" + shortcutHint("hands"), #selector(menuHands), on: state.handsRunning))
         menu.addItem(.separator())
         menu.addItem(item("Recentre" + shortcutHint("recentre"), #selector(menuRecentre)))
         menu.addItem(item("Steady mode" + shortcutHint("steady"), #selector(menuSteady), on: state.steady, enabled: state.steadyAvailable && state.linkOpen))
@@ -845,6 +941,9 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     }
 
     @objc private func menuPanel() { openControlPanel() }
+    @objc private func menuLauncher() { toggleLauncher() }
+    @objc private func menuPocket() { setPocketMode(!state.pocketMode) }
+    @objc private func menuHands() { setHands(!state.handsRunning) }
     @objc private func menuRecentre() { recentre() }
 
     /// The glowing tab on the edge of the Mac's screen that the floating screens lie beyond, until the pointer has

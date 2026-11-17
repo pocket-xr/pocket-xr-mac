@@ -7,7 +7,7 @@ import SwiftUI
 
 /// The panes of the settings window.
 enum SettingsPane: String, CaseIterable {
-    case space, picture, tracking, glasses, shortcuts, help
+    case space, picture, tracking, glasses, hands, controls, shortcuts, help
 
     var title: String {
         switch self {
@@ -15,6 +15,8 @@ enum SettingsPane: String, CaseIterable {
         case .picture: return "Picture"
         case .tracking: return "Head tracking"
         case .glasses: return "Glasses"
+        case .hands: return "Hands"
+        case .controls: return "Controls"
         case .shortcuts: return "Shortcuts"
         case .help: return "Help"
         }
@@ -27,6 +29,8 @@ enum SettingsPane: String, CaseIterable {
         case .picture: return "3D, brightness and the light around the screen you look at."
         case .tracking: return "How the screens stay put as you turn your head."
         case .glasses: return "What is plugged in and what Pocket XR can do with it."
+        case .hands: return "Point and pinch in the air, seen by your glasses' camera."
+        case .controls: return "A game controller as a remote for the Space, and Pocket mode."
         case .shortcuts: return "Change the Space from the keyboard, in any app."
         case .help: return "The tour, logs, your settings as a file, and the app itself."
         }
@@ -39,6 +43,8 @@ enum SettingsPane: String, CaseIterable {
         case .picture: return "sun.max"
         case .tracking: return "gyroscope"
         case .glasses: return "eyeglasses"
+        case .hands: return "hand.point.up.left"
+        case .controls: return "gamecontroller"
         case .shortcuts: return "keyboard"
         case .help: return "questionmark.circle"
         }
@@ -370,6 +376,8 @@ struct SettingsPaneHost: View {
         case .picture: SettingsPicturePane(store: store, state: state)
         case .tracking: SettingsTrackingPane(store: store, state: state)
         case .glasses: SettingsGlassesPane(store: store, state: state, actions: actions)
+        case .hands: SettingsPaneScaffold(.hands) { HandsSettingsSection(store: store, state: state, actions: actions) }
+        case .controls: SettingsPaneScaffold(.controls) { ControllerSettingsSection(store: store, state: state, actions: actions).settingsArrive(1) }
         case .shortcuts: SettingsShortcutsPane(store: store)
         case .help: SettingsHelpPane(store: store, state: state, actions: actions)
         }

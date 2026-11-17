@@ -104,6 +104,22 @@ final class AppState: ObservableObject {
     @Published var displayTiles = [DisplayTile]()
     /// The floating screen the pointer is on (an index into the floating screens), nil on the Mac's own screen.
     @Published var pointerScreen: Int?
+    /// The launcher is showing on a floating screen.
+    @Published var launcherOpen = false
+    /// Pocket mode: the Mac's own screen is black and the pointer is kept on the floating screens.
+    @Published var pocketMode = false
+    /// A game controller is connected: its name, else nil.
+    @Published var controllerName: String?
+    /// Hand tracking: running, how many hands are seen now, and one line on where it stands for the windows to show
+    /// ("Looking for the glasses' camera", "2 hands", "The camera is not allowed yet").
+    @Published var handsRunning = false
+    @Published var handsSeen = 0
+    @Published var handsStatus = ""
+    /// The glasses have a camera macOS can open (found by name among the video devices).
+    @Published var handsCameraFound = false
+    /// macOS permissions: the camera (hand tracking), and Accessibility (a pinch clicking for you).
+    @Published var cameraAllowed = false
+    @Published var accessibilityAllowed = false
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
 }
 
@@ -134,6 +150,25 @@ protocol AppActions: AnyObject {
     /// Puts the pointer in the middle of a floating screen (its index), or of the Mac's own screen with nil.
     func movePointer(toScreen index: Int?)
     func openControlPanel()
+    /// Shows the launcher on the floating screen the pointer is on (the first one when it is on the Mac's screen),
+    /// or hides it.
+    func toggleLauncher()
+    func setPocketMode(_ on: Bool)
+    /// Starts or stops hand tracking now (the setting `handsOn` is what starts it with the glasses).
+    func setHands(_ on: Bool)
+    /// Hand tracking's pointer: aims the pointer along a ray given in the head's own frame, degrees (left and up
+    /// positive, 0,0 straight ahead through the glasses). Does nothing when the ray meets no screen. True when it did.
+    @discardableResult func aimPointer(headYawDeg: Double, headPitchDeg: Double) -> Bool
+    /// Hand tracking with a camera that faces the user (the Mac's own): puts the pointer at [u], [v] (0 to 1 from
+    /// the left and from the top) of the floating screen the head is turned to, or, with no head tracking or in
+    /// Steady mode, of the floating screen the pointer is already on. False with no floating screen.
+    @discardableResult func placePointer(u: Double, v: Double) -> Bool
+    /// Presses or lets go the mouse button where the pointer is (needs Accessibility; does nothing without it).
+    func pointerButton(down: Bool)
+    /// Scrolls where the pointer is, in points (needs Accessibility).
+    func pointerScroll(dx: Double, dy: Double)
+    /// Asks macOS for Accessibility, with its own dialog, and opens the pane in System Settings.
+    func requestAccessibility()
     func openTour()
     func openSettings()
     func sendLogs()
@@ -167,5 +202,8 @@ struct Shortcut: Identifiable {
         Shortcut(id: "layout", title: "Next layout", keys: "⌃⌥L", keyCode: 37),
         Shortcut(id: "depth", title: "3D on or off", keys: "⌃⌥D", keyCode: 2),
         Shortcut(id: "pointer", title: "Pointer to the screen I look at", keys: "⌃⌥P", keyCode: 35),
+        Shortcut(id: "launcher", title: "Launcher", keys: "⌃⌥Space", keyCode: 49),
+        Shortcut(id: "pocket", title: "Pocket mode", keys: "⌃⌥K", keyCode: 40),
+        Shortcut(id: "hands", title: "Hand tracking", keys: "⌃⌥H", keyCode: 4),
     ]
 }

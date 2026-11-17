@@ -59,7 +59,7 @@ if let i = args.firstIndex(of: "--render-ui"), i + 1 < args.count {
     let folder = URL(fileURLWithPath: args[i + 1], isDirectory: true)
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     _ = NSApplication.shared
-    let files = MainActor.assumeIsolated { ControlPanelRender.renderAll(to: folder) + TourRender.renderAll(to: folder) + SettingsRender.renderAll(to: folder) }
+    let files = MainActor.assumeIsolated { ControlPanelRender.renderAll(to: folder) + LauncherRender.renderAll(to: folder) + ControllerRender.renderAll(to: folder) + HandsRender.renderAll(to: folder) + TourRender.renderAll(to: folder) + SettingsRender.renderAll(to: folder) }
     for f in files { print(f.path) }
     print("rendered \(files.count) pictures")
     exit(0)

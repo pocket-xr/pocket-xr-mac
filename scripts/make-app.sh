@@ -27,7 +27,8 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 [ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 
 if security find-identity -v -p codesigning | grep -q "Pocket XR Dev"; then
-  codesign --force --deep --options runtime --sign "Pocket XR Dev" "$APP"
+  # The hardened runtime refuses the camera (hand tracking) without this entitlement.
+  codesign --force --deep --options runtime --entitlements Resources/PocketXR.entitlements --sign "Pocket XR Dev" "$APP"
   echo "Signed with Pocket XR Dev."
 else
   codesign --force --deep --sign - "$APP"

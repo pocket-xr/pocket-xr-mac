@@ -570,11 +570,20 @@ struct ControlPanelFooter: View {
     let actions: SettingsActionsRef
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            SettingsButton("Settings…", symbol: "gearshape") { actions.target?.openSettings() }
-            SettingsButton("Tour") { actions.target?.openTour() }
-            Spacer(minLength: 8)
-            SettingsButton("Quit") { actions.target?.quit() }
+        VStack(alignment: .leading, spacing: 8) {
+            // What lives in the glasses: the launcher on a floating screen, the Mac's screen dark, hands.
+            HStack(alignment: .center, spacing: 8) {
+                SettingsButton("Launcher", symbol: "square.grid.3x3") { actions.target?.toggleLauncher() }
+                SettingsButton("Pocket mode", symbol: "lock") { actions.target?.setPocketMode(true) }
+                SettingsButton("Hands", symbol: "hand.point.up.left") { actions.target?.setHands(true) }
+                Spacer(minLength: 0)
+            }
+            HStack(alignment: .center, spacing: 8) {
+                SettingsButton("Settings…", symbol: "gearshape") { actions.target?.openSettings() }
+                SettingsButton("Tour") { actions.target?.openTour() }
+                Spacer(minLength: 8)
+                SettingsButton("Quit") { actions.target?.quit() }
+            }
         }
     }
 }

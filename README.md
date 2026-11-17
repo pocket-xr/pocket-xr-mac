@@ -6,9 +6,10 @@ It is the Mac version of [Pocket XR](https://github.com/pocket-xr/pocket-xr), th
 for Android phones, and of [Pocket XR for Steam Deck](https://github.com/pocket-xr/pocket-xr-deck). Same glasses,
 same rules, no account and no paid tier.
 
-> **Not released yet.** Version 0.2 runs on an Intel MacBook Air (macOS 14) with the XREAL Aura: two screens, 3D and
-> head tracking were seen working there on 16 November 2026. Everything else below is written but not yet tried in
-> glasses, and no other glasses have been tried on a Mac at all.
+> **Not released yet.** Version 0.3 runs on an Intel MacBook Air (macOS 14) with the XREAL Aura. Seen working there
+> on 16 November 2026: one to three screens, 3D, head tracking, Steady mode, the control panel, saved arrangements,
+> the launcher, Pocket mode, a game controller, and hand tracking with the Aura's camera and with the Mac's own.
+> No other glasses have been tried on a Mac at all.
 ## How it works
 
 Pocket XR adds 1 to 3 screens to your Mac, to the right of its own screen. Move the pointer off the right edge and
@@ -70,11 +71,23 @@ Pocket XR lives in the menu bar, under the glasses icon. A two minute tour opens
   saved to and restored from a file, open at login.
 - **Tour of Pocket XR**, **Send logs to Mike** and **Quit and put the glasses back**.
 
-Every control has a key that works in any app, all with Control-Option: R recentre, S Steady mode, = and - size,
-] and [ distance, . and , curve, L next layout, D 3D, P pointer to the screen you look at.
+A **control panel** on the Mac's own screen holds all of it in one place: a map of the displays (click a screen to
+send the pointer there), a pad to drag the screens and pinch or scroll to resize them, saved arrangements, and one
+screen more or fewer. Holding Control and Option, moving the pointer carries the screens and scrolling resizes them.
 
-Left on the phone, because a Mac has its own: the app launcher, window gestures, hand tracking, game controllers,
-PC VR and Pocket mode.
+- **Launcher** (Control-Option-Space): your Mac's apps on a floating screen, with pinned apps and search as you type.
+- **Pocket mode** (Control-Option-K): the Mac's own screens go black and the pointer stays on the floating screens.
+- **Game controller**: a remote for the Space while the left stick is held in. Right stick moves the screens, the
+  triggers resize them, the buttons recentre, change layout, switch Steady mode and open the launcher.
+- **Hand tracking** (Control-Option-H): point and pinch, seen by the glasses' camera, or by the Mac's camera turned
+  to face you (an air trackpad). A pinch clicks once Pocket XR is allowed under Accessibility. On a 2018 MacBook Air
+  it finds a hand three or four times a second with the Aura's camera.
+
+Every control has a key that works in any app, all with Control-Option: R recentre, S Steady mode, = and - size,
+] and [ distance, . and , curve, L next layout, D 3D, P pointer to the screen you look at, Space the launcher,
+K Pocket mode, H hand tracking.
+
+Left on the phone: window gestures on a trackpad drawn on the phone, the on-screen gamepad and game keys, and PC VR.
 
 To see every tour step and settings pane as pictures, without glasses:
 

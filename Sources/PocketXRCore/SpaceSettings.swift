@@ -31,6 +31,24 @@ public enum EdgeFade: String, Codable, CaseIterable, Sendable {
     case off, soft, wide
 }
 
+/// When a game controller's buttons and sticks change the Space.
+public enum ControllerMode: String, Codable, CaseIterable, Sendable {
+    /// Never.
+    case off
+    /// Only while the left stick is held pressed in, so a game on a floating screen keeps the controller to itself.
+    case held
+    /// Always.
+    case always
+}
+
+/// How the hands aim the pointer.
+public enum HandAim: String, Codable, CaseIterable, Sendable {
+    /// The hand aims, a pinch clicks.
+    case handRay
+    /// The head aims (where you look), a pinch anywhere clicks.
+    case lookAndPinch
+}
+
 /// A saved arrangement of the screens.
 public struct SpacePreset: Codable, Equatable, Sendable, Identifiable {
     public var id: UUID
@@ -150,6 +168,14 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     public var tourSeen = false
     /// The control panel opens on the Mac's screen when Pocket XR starts.
     public var panelAtStart = true
+    /// The launcher's pinned apps, as paths to the .app bundles, 10 at most. Empty until the first run picks some.
+    public var pinnedApps = [String]()
+    /// The first run has picked the pinned apps (so an emptied list stays empty).
+    public var pinsChosen = false
+    public var controllerMode = ControllerMode.held
+    /// Hand tracking starts with the glasses.
+    public var handsOn = false
+    public var handAim = HandAim.handRay
     /// Holding Control and Option, moving the mouse moves the Space and scrolling resizes it.
     public var grabKeys = true
 
@@ -163,6 +189,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     public static let brightnessRange = 0.3...1.0
     public static let delayRange = 0.0...40.0
     public static let offsetYawRange = -90.0...90.0
+    public static let maxPinnedApps = 10
     public static let offsetPitchRange = -40.0...40.0
 
     /// Every value brought inside its range (a hand-edited or older file).
@@ -178,6 +205,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         s.displayDelayMs = min(max(s.displayDelayMs, Self.delayRange.lowerBound), Self.delayRange.upperBound)
         s.offsetYawDeg = min(max(s.offsetYawDeg, Self.offsetYawRange.lowerBound), Self.offsetYawRange.upperBound)
         s.offsetPitchDeg = min(max(s.offsetPitchDeg, Self.offsetPitchRange.lowerBound), Self.offsetPitchRange.upperBound)
+        if s.pinnedApps.count > Self.maxPinnedApps { s.pinnedApps = Array(s.pinnedApps.prefix(Self.maxPinnedApps)) }
         return s
     }
 
@@ -215,5 +243,10 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         offsetPitchDeg = try c.decodeIfPresent(Double.self, forKey: .offsetPitchDeg) ?? d.offsetPitchDeg
         panelAtStart = try c.decodeIfPresent(Bool.self, forKey: .panelAtStart) ?? d.panelAtStart
         grabKeys = try c.decodeIfPresent(Bool.self, forKey: .grabKeys) ?? d.grabKeys
+        pinnedApps = try c.decodeIfPresent([String].self, forKey: .pinnedApps) ?? d.pinnedApps
+        pinsChosen = try c.decodeIfPresent(Bool.self, forKey: .pinsChosen) ?? d.pinsChosen
+        controllerMode = try c.decodeIfPresent(ControllerMode.self, forKey: .controllerMode) ?? d.controllerMode
+        handsOn = try c.decodeIfPresent(Bool.self, forKey: .handsOn) ?? d.handsOn
+        handAim = try c.decodeIfPresent(HandAim.self, forKey: .handAim) ?? d.handAim
     }
 }
