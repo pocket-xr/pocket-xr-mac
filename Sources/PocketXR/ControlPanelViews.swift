@@ -471,6 +471,8 @@ struct ControlPanelPad: View {
     let actions: SettingsActionsRef
     @State private var lastDrag: CGSize = .zero
     @State private var dragging: Bool = false
+    /// What a drag has hold of: one screen (its index), or all of them with nil. Decided where the drag starts.
+    @State private var dragScreen: Int? = nil
     @State private var pinchFrom: Double? = nil
     @State private var hover: Bool = false
     @Environment(\.settingsStatic) private var isStatic
@@ -524,11 +526,12 @@ struct ControlPanelPad: View {
                     .accessibilityHidden(true)
             }
             words
+            lineUp
             corners
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
-        .gesture(drag(scale: scale))
+        .gesture(drag(scale: scale, size: size))
         .simultaneousGesture(pinch)
         .animation(Animation.lookEnter(Look.quick), value: dragging)
         .animation(Animation.lookInOut(), value: steady)
@@ -557,15 +560,32 @@ struct ControlPanelPad: View {
                 .padding(.bottom, 26)
                 .allowsHitTesting(false)
         } else {
-            Text(state.panels.isEmpty ? "Your floating screens will show here." : "Drag to move. Pinch or scroll to resize.")
+            Text(hint)
                 .font(Font.system(size: 12, weight: .regular))
                 .foregroundColor(hover || dragging ? Color.lookInk : Color.lookInk2)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.top, 9)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .allowsHitTesting(false)
                 .animation(Animation.lookEnter(Look.quick), value: hover)
+        }
+    }
+
+    private var hint: String {
+        if state.panels.isEmpty { return "Your floating screens will show here." }
+        if state.panels.count == 1 { return "Drag to move. Pinch or scroll to resize." }
+        return "Drag one screen, or beside them for all. Pinch to resize."
+    }
+
+    /// Shown once a screen has been moved by hand: puts every screen back in its place in the layout.
+    @ViewBuilder
+    private var lineUp: some View {
+        if !steady && store.s.screensMoved {
+            ControlPanelSmallButton("Line up") { actions.target?.resetScreenMoves() }
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
     }
 
@@ -593,22 +613,39 @@ struct ControlPanelPad: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
-    private func drag(scale: Double) -> some Gesture {
+    /// The screen under a point of the pad, the topmost first, nil on the space around them.
+    private func screen(at point: CGPoint, size: CGSize) -> Int? {
+        let geometry = ControlPanelPadGeometry(panels: state.panels, size: size)
+        for (i, p) in state.panels.enumerated().reversed() {
+            let r: CGRect = geometry.rect(yawDeg: p.yawDeg, pitchDeg: p.pitchDeg, widthDeg: p.widthDeg, heightDeg: p.heightDeg)
+            if r.insetBy(dx: -3, dy: -3).contains(point) { return i }
+        }
+        return nil
+    }
+
+    private func drag(scale: Double, size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { g in
                 guard !steady, scale > 0 else { return }
+                // A drag that starts on a screen moves that screen; one that starts beside them moves them all.
+                if !dragging { dragScreen = state.panels.count > 1 ? screen(at: g.startLocation, size: size) : nil }
                 dragging = true
                 let dx: Double = Double(g.translation.width - lastDrag.width)
                 let dy: Double = Double(g.translation.height - lastDrag.height)
                 lastDrag = g.translation
                 // Yaw is left positive and pitch up positive; the pad's x runs right and its y down.
                 if dx != 0 || dy != 0 {
-                    actions.target?.nudgeSpace(yawDeg: -dx / scale, pitchDeg: -dy / scale)
+                    if let one = dragScreen {
+                        actions.target?.nudgeScreen(one, yawDeg: -dx / scale, pitchDeg: -dy / scale)
+                    } else {
+                        actions.target?.nudgeSpace(yawDeg: -dx / scale, pitchDeg: -dy / scale)
+                    }
                 }
             }
             .onEnded { _ in
                 lastDrag = .zero
                 dragging = false
+                dragScreen = nil
             }
     }
 

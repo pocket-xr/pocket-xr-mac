@@ -147,6 +147,10 @@ protocol AppActions: AnyObject {
     func setSteady(_ on: Bool)
     /// Moves the whole Space by hand, degrees (left and up positive). Added to what is already there.
     func nudgeSpace(yawDeg: Double, pitchDeg: Double)
+    /// Moves one screen by hand (its index), degrees, added to where it already is.
+    func nudgeScreen(_ index: Int, yawDeg: Double, pitchDeg: Double)
+    /// Puts every screen moved by hand back in its place in the layout.
+    func resetScreenMoves()
     /// Puts the pointer in the middle of a floating screen (its index), or of the Mac's own screen with nil.
     func movePointer(toScreen index: Int?)
     func openControlPanel()

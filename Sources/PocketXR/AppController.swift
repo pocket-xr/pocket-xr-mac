@@ -21,6 +21,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private lazy var controllerInput = ControllerInput(store: store, state: state, actions: self)
     private lazy var hands = HandTracking(store: store, state: state, actions: self)
     private var panelShownBeforePocket = false
+    private var arrangeSoon: DispatchWorkItem?
     private var edgeHint: EdgeHint?
     private var grab: SpaceGrab?
 
@@ -339,6 +340,12 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     // MARK: settings
 
     private func settingsChanged(from old: SpaceSettings, to new: SpaceSettings) {
+        // Screens moved by hand belong to the layout they were moved in: another layout starts tidy. (A saved
+        // arrangement brings its own moves with its layout, and those are kept.)
+        if old.layout != new.layout, new.screensMoved, old.screenYawDeg == new.screenYawDeg, old.screenPitchDeg == new.screenPitchDeg {
+            resetScreenMoves()
+            return
+        }
         recompute()
         if old.want3D != new.want3D {
             plog("3D side by side: \(new.want3D ? "on" : "off")")
@@ -381,8 +388,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             placements = SpaceLayout.arrange(layout: s.layout, aspects: aspects, widthDeg: s.widthDeg, distance: s.distance, curve: s.curve)
             // Moved by hand: the whole Space turned about the head.
             for i in placements.indices {
-                placements[i].yawDeg += s.offsetYawDeg
-                placements[i].pitchDeg += s.offsetPitchDeg
+                placements[i].yawDeg += s.offsetYawDeg + (i < s.screenYawDeg.count ? s.screenYawDeg[i] : 0)
+                placements[i].pitchDeg += s.offsetPitchDeg + (i < s.screenPitchDeg.count ? s.screenPitchDeg[i] : 0)
             }
         }
         state.panels = placements
@@ -390,7 +397,17 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         let wholeAspect: Double = window.map { Double($0.frame.width / max($0.frame.height, 1)) } ?? 16.0 / 9
         state.viewAspect = (!state.steady && wholeAspect >= 3.2) ? wholeAspect / 2 : wholeAspect
         // The pointer crosses between the displays the way the screens now look (a no-op when nothing moved).
-        if !quitting { displays?.arrange(glasses: NSScreen.glasses?.displayID, panels: placements) }
+        // Not while a screen is being dragged about: macOS takes half a second to move displays, so it is done
+        // once the screens have been still for a moment.
+        arrangeSoon?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.quitting else { return }
+                self.displays?.arrange(glasses: NSScreen.glasses?.displayID, panels: self.placements)
+            }
+        }
+        arrangeSoon = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
         // Head scroll slides the row no further than its first and last screens.
         if let a = placements.first?.yawDeg, let b = placements.last?.yawDeg { headPose?.setScrollRange(lowDeg: a, highDeg: b) }
         var o = RenderOptions()
@@ -663,6 +680,20 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         s.offsetYawDeg += yawDeg
         s.offsetPitchDeg += pitchDeg
         store.s = s.clamped
+    }
+
+    func nudgeScreen(_ index: Int, yawDeg: Double, pitchDeg: Double) {
+        guard !state.steady else { return }
+        var s = store.s
+        s.moveScreen(index, yawDeg: yawDeg, pitchDeg: pitchDeg)
+        store.s = s
+    }
+
+    func resetScreenMoves() {
+        var s = store.s
+        s.screenYawDeg = []
+        s.screenPitchDeg = []
+        store.s = s
     }
 
     func movePointer(toScreen index: Int?) {

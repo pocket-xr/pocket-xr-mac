@@ -60,9 +60,14 @@ public struct SpacePreset: Codable, Equatable, Sendable, Identifiable {
     /// Where the Space had been moved to by hand when this was saved (nil in one saved before that could be done).
     public var offsetYawDeg: Double?
     public var offsetPitchDeg: Double?
+    /// Single screens moved by hand when this was saved (nil in one saved before that could be done).
+    public var screenYawDeg: [Double]?
+    public var screenPitchDeg: [Double]?
 
     public init(id: UUID = UUID(), name: String, layout: ArrangeLayout, widthDeg: Double, distance: Double, curve: Double,
-                offsetYawDeg: Double? = nil, offsetPitchDeg: Double? = nil) {
+                offsetYawDeg: Double? = nil, offsetPitchDeg: Double? = nil, screenYawDeg: [Double]? = nil, screenPitchDeg: [Double]? = nil) {
+        self.screenYawDeg = screenYawDeg
+        self.screenPitchDeg = screenPitchDeg
         self.id = id
         self.name = name
         self.layout = layout
@@ -80,7 +85,33 @@ extension SpaceSettings {
         let sameSize: Bool = abs(p.widthDeg - widthDeg) < 0.01 && abs(p.distance - distance) < 0.001
         let sameShape: Bool = abs(p.curve - curve) < 0.001 && p.layout == layout
         let samePlace: Bool = abs((p.offsetYawDeg ?? 0) - offsetYawDeg) < 0.01 && abs((p.offsetPitchDeg ?? 0) - offsetPitchDeg) < 0.01
-        return sameSize && sameShape && samePlace
+        let sameScreens: Bool = Self.sameMoves(p.screenYawDeg ?? [], screenYawDeg) && Self.sameMoves(p.screenPitchDeg ?? [], screenPitchDeg)
+        return sameSize && sameShape && samePlace && sameScreens
+    }
+
+    /// Two lists of screen moves are the same when every screen's move is, a missing entry counting as none.
+    static func sameMoves(_ a: [Double], _ b: [Double]) -> Bool {
+        for i in 0..<max(a.count, b.count) {
+            let x: Double = i < a.count ? a[i] : 0
+            let y: Double = i < b.count ? b[i] : 0
+            if abs(x - y) >= 0.01 { return false }
+        }
+        return true
+    }
+
+    /// A screen has been moved by hand.
+    public var screensMoved: Bool {
+        screenYawDeg.contains { abs($0) >= 0.01 } || screenPitchDeg.contains { abs($0) >= 0.01 }
+    }
+
+    /// Moves one screen by hand, added to where it already is.
+    public mutating func moveScreen(_ index: Int, yawDeg: Double, pitchDeg: Double) {
+        guard index >= 0, index < Self.screensRange.upperBound else { return }
+        while screenYawDeg.count <= index { screenYawDeg.append(0) }
+        while screenPitchDeg.count <= index { screenPitchDeg.append(0) }
+        screenYawDeg[index] += yawDeg
+        screenPitchDeg[index] += pitchDeg
+        self = clamped
     }
 
     /// Puts the Space as a saved arrangement has it.
@@ -91,6 +122,8 @@ extension SpaceSettings {
         curve = p.curve
         offsetYawDeg = p.offsetYawDeg ?? 0
         offsetPitchDeg = p.offsetPitchDeg ?? 0
+        screenYawDeg = p.screenYawDeg ?? []
+        screenPitchDeg = p.screenPitchDeg ?? []
         self = clamped
     }
 
@@ -104,7 +137,8 @@ extension SpaceSettings {
             name = "Arrangement \(number)"
         }
         presets.append(SpacePreset(name: name, layout: layout, widthDeg: widthDeg, distance: distance, curve: curve,
-                                   offsetYawDeg: offsetYawDeg, offsetPitchDeg: offsetPitchDeg))
+                                   offsetYawDeg: offsetYawDeg, offsetPitchDeg: offsetPitchDeg,
+                                   screenYawDeg: screensMoved ? screenYawDeg : nil, screenPitchDeg: screensMoved ? screenPitchDeg : nil))
         return name
     }
 }
@@ -129,6 +163,10 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     /// Recentre brings it back to 0.
     public var offsetYawDeg = 0.0
     public var offsetPitchDeg = 0.0
+    /// Single screens moved by hand, on top of the layout: degrees for each screen in order (left and up positive).
+    /// A screen with no entry has not been moved. A change of layout clears them.
+    public var screenYawDeg = [Double]()
+    public var screenPitchDeg = [Double]()
     /// Steady mode: how large the row of screens is drawn on the glasses' flat picture, 1 filling it. Smaller looks
     /// further away; larger runs off the sides (Head scroll slides it).
     public var steadyZoom = 1.0
@@ -209,6 +247,8 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         s.displayDelayMs = min(max(s.displayDelayMs, Self.delayRange.lowerBound), Self.delayRange.upperBound)
         s.offsetYawDeg = min(max(s.offsetYawDeg, Self.offsetYawRange.lowerBound), Self.offsetYawRange.upperBound)
         s.offsetPitchDeg = min(max(s.offsetPitchDeg, Self.offsetPitchRange.lowerBound), Self.offsetPitchRange.upperBound)
+        s.screenYawDeg = s.screenYawDeg.prefix(Self.screensRange.upperBound).map { min(max($0, Self.offsetYawRange.lowerBound), Self.offsetYawRange.upperBound) }
+        s.screenPitchDeg = s.screenPitchDeg.prefix(Self.screensRange.upperBound).map { min(max($0, Self.offsetPitchRange.lowerBound), Self.offsetPitchRange.upperBound) }
         s.steadyZoom = min(max(s.steadyZoom, Self.steadyZoomRange.lowerBound), Self.steadyZoomRange.upperBound)
         if s.pinnedApps.count > Self.maxPinnedApps { s.pinnedApps = Array(s.pinnedApps.prefix(Self.maxPinnedApps)) }
         return s
@@ -254,5 +294,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         handsOn = try c.decodeIfPresent(Bool.self, forKey: .handsOn) ?? d.handsOn
         handAim = try c.decodeIfPresent(HandAim.self, forKey: .handAim) ?? d.handAim
         steadyZoom = try c.decodeIfPresent(Double.self, forKey: .steadyZoom) ?? d.steadyZoom
+        screenYawDeg = try c.decodeIfPresent([Double].self, forKey: .screenYawDeg) ?? d.screenYawDeg
+        screenPitchDeg = try c.decodeIfPresent([Double].self, forKey: .screenPitchDeg) ?? d.screenPitchDeg
     }
 }
