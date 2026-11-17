@@ -6,10 +6,22 @@ It is the Mac version of [Pocket XR](https://github.com/pocket-xr/pocket-xr), th
 for Android phones, and of [Pocket XR for Steam Deck](https://github.com/pocket-xr/pocket-xr-deck). Same glasses,
 same rules, no account and no paid tier.
 
-> **Not released yet.** Version 0.3 runs on an Intel MacBook Air (macOS 14) with the XREAL Aura. Seen working there
-> on 16 November 2026: one to three screens, 3D, head tracking, Steady mode, the control panel, saved arrangements,
-> the launcher, Pocket mode, a game controller, and hand tracking with the Aura's camera and with the Mac's own.
-> No other glasses have been tried on a Mac at all.
+> **A first version.** Pocket XR for Mac 0.3 has been used with one pair of glasses on one Mac: the **XREAL Aura on an
+> Intel MacBook Air (macOS 14)**. There it showed one to three screens, 3D, head tracking, Steady mode, the control
+> panel, saved arrangements, the launcher, Pocket mode, a game controller, and hand tracking with the Aura's camera and
+> with the Mac's own. No other glasses and no Apple Silicon Mac have been tried. If you try it, please use **Send logs
+> to Mike** in the menu, whether it works or not.
+
+## Download
+
+1. Download `PocketXR-Mac-0.3.0.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
+   open it. Move **Pocket XR** to Applications.
+2. Plug your glasses in and open Pocket XR. It lives in the menu bar, under a pair of glasses.
+3. macOS asks to allow **Screen Recording**: allow it in System Settings, Privacy & Security, Screen Recording, then
+   open Pocket XR again. It is how Pocket XR shows your screens in the glasses.
+
+Needs macOS 14 or newer. One app for Intel and Apple Silicon Macs (Apple Silicon not tried yet).
+
 ## How it works
 
 Pocket XR adds 1 to 3 screens to your Mac, to the right of its own screen. Move the pointer off the right edge and
@@ -85,7 +97,8 @@ screen more or fewer. Holding Control and Option, moving the pointer carries the
 
 Every control has a key that works in any app, all with Control-Option: R recentre, S Steady mode, = and - size,
 ] and [ distance, . and , curve, L next layout, D 3D, P pointer to the screen you look at, Space the launcher,
-K Pocket mode, H hand tracking.
+K Pocket mode, H hand tracking. Any of them can be changed in Settings, Shortcuts (for keys another app
+already uses).
 
 Left on the phone: window gestures on a trackpad drawn on the phone, the on-screen gamepad and game keys, and PC VR.
 

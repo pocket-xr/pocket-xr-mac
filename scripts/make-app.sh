@@ -5,12 +5,18 @@
 #
 #   scripts/make-app.sh            this Mac's architecture, release
 #   scripts/make-app.sh universal  Apple Silicon and Intel in one app (needs Xcode, not only the command line tools)
+#   scripts/make-app.sh direct     this Mac's architecture, without SwiftPM (only the command line tools)
+#   scripts/make-app.sh direct-universal  Apple Silicon and Intel, without SwiftPM: for releases
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [ "${1:-}" = "direct" ]; then
   # Without SwiftPM (scripts/build-direct.sh), for a Mac whose command line tools cannot read Package.swift.
   bash scripts/build-direct.sh
+  BIN=".build/direct/PocketXR"
+elif [ "${1:-}" = "direct-universal" ]; then
+  # The same, for Intel and Apple Silicon in one app: what goes in a release.
+  bash scripts/build-direct.sh universal
   BIN=".build/direct/PocketXR"
 elif [ "${1:-}" = "universal" ]; then
   swift build -c release --arch arm64 --arch x86_64

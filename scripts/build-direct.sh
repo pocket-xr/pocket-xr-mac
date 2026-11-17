@@ -2,12 +2,27 @@
 # Builds Pocket XR without SwiftPM, for a Mac whose Command Line Tools cannot read Package.swift
 # ("Invalid manifest ... Undefined symbols ... PackageDescription", seen with Swift 6.0.3 tools on macOS 14.8).
 # The same three modules as Package.swift: CVirtualDisplay (Objective-C), PocketXRCore, PocketXR.
+#
+#   scripts/build-direct.sh            this Mac's architecture
+#   scripts/build-direct.sh universal  Intel and Apple Silicon in one binary (the Command Line Tools' SDK has both)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-OUT=.build/direct
+
+if [ "${1:-}" = "universal" ]; then
+    for arch in x86_64 arm64; do
+        ARCH="$arch" OUT=".build/direct-$arch" bash "$0"
+    done
+    mkdir -p .build/direct
+    lipo -create .build/direct-x86_64/PocketXR .build/direct-arm64/PocketXR -output .build/direct/PocketXR
+    lipo -info .build/direct/PocketXR
+    echo "built .build/direct/PocketXR (universal)"
+    exit 0
+fi
+
+OUT="${OUT:-.build/direct}"
 mkdir -p "$OUT"
 SDK=$(xcrun --show-sdk-path)
-TARGET="$(uname -m)-apple-macosx14.0"
+TARGET="${ARCH:-$(uname -m)}-apple-macosx14.0"
 
 # Command Line Tools installed over an older set keep a 2023 usr/include/swift/module.modulemap beside the new
 # bridging.modulemap, and every Swift compile then stops at "redefinition of module 'SwiftBridging'". The old file is
