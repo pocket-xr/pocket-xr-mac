@@ -327,6 +327,14 @@ struct ControlPanelSpaceCard: View {
                     step: 0.05,
                     valueText: "\(Int((store.s.steadyZoom * 100).rounded())) %"
                 )
+                ControlPanelSliderRow(
+                    "Screen gap",
+                    value: $store.s.steadyGapDeg,
+                    range: SpaceSettings.steadyGapRange,
+                    step: 0.1,
+                    valueText: String(format: "%.1f°", store.s.steadyGapDeg)
+                )
+                .help("The space between screens in Steady mode.")
             } else {
                 // Arrangement, layout, size, distance and curve do nothing in Steady mode, so they are not shown
                 // there: the panel stays short enough for a laptop's screen.
@@ -453,7 +461,8 @@ struct ControlPanelSliderRow: View {
             Text(title)
                 .font(Font.lookLine)
                 .foregroundColor(Color.lookInk)
-                .frame(width: 66, alignment: .leading)
+                // "Screen gap" is 73 points wide in this font (measured on macOS 14).
+                .frame(width: 76, alignment: .leading)
             SettingsSlider(value: $value, range: range, step: step, label: title, valueText: valueText)
             Text(valueText)
                 .font(Font.system(size: 13, weight: .regular).monospacedDigit())

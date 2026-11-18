@@ -119,6 +119,8 @@ Settings on the glasses themselves, as on Android:
 
 **Steady mode**, where the glasses hold the picture still themselves, is written for the Aura and the One series as on
 Android. It was seen working with the Aura on a Mac on 16 November 2026; the One series has not been tried on a Mac.
+Pocket XR remembers whether you left Steady mode on and turns it back on when the glasses connect, and the control
+panel's **Screen gap** sets the space between screens in Steady mode.
 
 - **XREAL Aura:** nothing to do.
 - **XREAL One series:** use **Follow** mode and turn **Stabilizer off** in the glasses' menu.

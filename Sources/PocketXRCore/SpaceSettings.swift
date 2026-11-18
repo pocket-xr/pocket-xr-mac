@@ -170,6 +170,11 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     /// Steady mode: how large the row of screens is drawn on the glasses' flat picture, 1 filling it. Smaller looks
     /// further away; larger runs off the sides (Head scroll slides it).
     public var steadyZoom = 1.0
+    /// Steady mode: the space between screens in the row, degrees of the glasses' flat picture.
+    public var steadyGapDeg = 0.6
+    /// Steady mode as the user last chose it. While it is on, Steady mode comes back on when the glasses connect and
+    /// their settings link has settled (when Pocket XR starts, or after an unplug). Unplugging or quitting keeps it.
+    public var steadyOn = false
 
     // The picture
     /// 3D side by side: each eye its own picture.
@@ -232,6 +237,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     public static let offsetYawRange = -90.0...90.0
     public static let maxPinnedApps = 10
     public static let steadyZoomRange = 0.4...1.6
+    public static let steadyGapRange = 0.0...3.0
     public static let offsetPitchRange = -40.0...40.0
 
     /// Every value brought inside its range (a hand-edited or older file).
@@ -250,6 +256,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         s.screenYawDeg = s.screenYawDeg.prefix(Self.screensRange.upperBound).map { min(max($0, Self.offsetYawRange.lowerBound), Self.offsetYawRange.upperBound) }
         s.screenPitchDeg = s.screenPitchDeg.prefix(Self.screensRange.upperBound).map { min(max($0, Self.offsetPitchRange.lowerBound), Self.offsetPitchRange.upperBound) }
         s.steadyZoom = min(max(s.steadyZoom, Self.steadyZoomRange.lowerBound), Self.steadyZoomRange.upperBound)
+        s.steadyGapDeg = min(max(s.steadyGapDeg, Self.steadyGapRange.lowerBound), Self.steadyGapRange.upperBound)
         if s.pinnedApps.count > Self.maxPinnedApps { s.pinnedApps = Array(s.pinnedApps.prefix(Self.maxPinnedApps)) }
         return s
     }
@@ -294,6 +301,8 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         handsOn = try c.decodeIfPresent(Bool.self, forKey: .handsOn) ?? d.handsOn
         handAim = try c.decodeIfPresent(HandAim.self, forKey: .handAim) ?? d.handAim
         steadyZoom = try c.decodeIfPresent(Double.self, forKey: .steadyZoom) ?? d.steadyZoom
+        steadyGapDeg = try c.decodeIfPresent(Double.self, forKey: .steadyGapDeg) ?? d.steadyGapDeg
+        steadyOn = try c.decodeIfPresent(Bool.self, forKey: .steadyOn) ?? d.steadyOn
         screenYawDeg = try c.decodeIfPresent([Double].self, forKey: .screenYawDeg) ?? d.screenYawDeg
         screenPitchDeg = try c.decodeIfPresent([Double].self, forKey: .screenPitchDeg) ?? d.screenPitchDeg
     }

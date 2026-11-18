@@ -44,8 +44,12 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private var displaysWereRemoved = false
     /// When the glasses' display was last seen to go, nil while it is there.
     private var glassesGoneSince: Double?
-    /// Set when Pocket XR starts itself again with Steady mode on, so the new copy turns it on again.
+    /// Set by Pocket XR 0.3.0 and earlier when it started itself again with Steady mode on. Now the saved
+    /// `steadyOn` setting does that job; a key left behind is read once at start and taken into it.
     private nonisolated static let resumeSteadyKey = "resume_steady"
+    /// Steady mode is to come back on for these glasses (the user left it on) and has not been asked yet. Read on the
+    /// settings thread too: while it is set, the glasses are left in 2D.
+    private let steadyPending = SteadyPending()
     private var resumingSteady = false
     /// When the glasses were last asked to change mode (3D, Steady mode), or Pocket XR started: for a while after,
     /// their display and even their USB connection come and go, and none of that is an unplugging.
@@ -86,6 +90,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
 
     func start() {
         plog("Pocket XR for Mac \(state.version) starting, macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        if UserDefaults.standard.bool(forKey: Self.resumeSteadyKey) {
+            UserDefaults.standard.removeObject(forKey: Self.resumeSteadyKey)
+            store.s.steadyOn = true
+        }
         buildMenu()
         registerShortcuts()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
@@ -196,6 +204,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         state.steadyAvailable = g?.steadyCapable ?? false
         state.steady = false
         state.linkOpen = false
+        // Steady mode as the user left it comes back once for each connection of glasses that can do it.
+        steadyPending.value = store.s.steadyOn && (g?.steadyCapable ?? false) && (g?.controlLink ?? false)
         recompute()
         guard let g else { hands.stop(); return }
         startTracking(g)
@@ -214,16 +224,22 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
                         self.resetSteadyScroll()
                         self.recompute()
                     }
-                    // Steady mode was on when Pocket XR started itself again (a screen added or removed): back on.
-                    if st.link, !st.busy, !st.steady, !self.resumingSteady, UserDefaults.standard.bool(forKey: Self.resumeSteadyKey) {
+                    // The user left Steady mode on (before a quit, an unplug, or Pocket XR starting itself again when
+                    // a screen is added or removed): back on, once the glasses have settled.
+                    if st.steady, self.steadyPending.value, !self.resumingSteady {
+                        self.steadyPending.value = false // already on
+                    }
+                    if st.link, !st.busy, !st.steady, !self.resumingSteady, self.steadyPending.value {
                         self.resumingSteady = true
-                        plog("Steady mode: coming back on after the restart, once the glasses have settled")
+                        plog("Steady mode: coming back on as it was left, once the glasses have settled")
                         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
                             MainActor.assumeIsolated {
-                                UserDefaults.standard.removeObject(forKey: Self.resumeSteadyKey)
-                                guard let self, !self.quitting else { return }
+                                guard let self else { return }
                                 self.resumingSteady = false
-                                self.setSteady(true)
+                                guard self.steadyPending.value, !self.quitting else { return }
+                                self.steadyPending.value = false
+                                // Turned off meanwhile: stays off.
+                                if self.store.s.steadyOn { self.setSteady(true) }
                             }
                         }
                     }
@@ -231,10 +247,11 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
                 }
             }
             // Read on the settings thread; the settings live in UserDefaults, which is thread safe.
-            // While Steady mode is waiting to come back on after a restart, the glasses are left in 2D: a switch to
-            // 3D and straight on to Steady mode was too much for the Aura (16 Nov 2026: it answered 5001 three times,
-            // then dropped off USB altogether).
-            s.want3D = { Self.savedSettings().want3D && !UserDefaults.standard.bool(forKey: Self.resumeSteadyKey) }
+            // While Steady mode is waiting to come back on, the glasses are left in 2D: a switch to 3D and straight on
+            // to Steady mode was too much for the Aura (16 Nov 2026: it answered 5001 three times, then dropped off
+            // USB altogether).
+            let pending: SteadyPending = steadyPending
+            s.want3D = { Self.savedSettings().want3D && !pending.value }
             s.steadySixDof = { Self.savedSettings().steadySixDof }
             s.start()
             settings = s
@@ -380,7 +397,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             let viewAspect: Double = window.map { Double($0.frame.width / max($0.frame.height, 1)) } ?? 16.0 / 9
             let hfov = 2 * atan(tan(fov * .pi / 360) * viewAspect) * 180 / .pi
             let n = Double(max(aspects.count, 1))
-            let gap = 0.6
+            let gap = s.steadyGapDeg
             // Bigger and smaller in Steady mode: the row drawn larger or smaller on the glasses' picture.
             let each = max(2, (hfov * 0.96 - gap * (n - 1)) / n * s.steadyZoom)
             placements = SpaceLayout.row(aspects: aspects, widthDeg: each, distance: SpaceLayout.defaultDistance, gapDeg: gap)
@@ -591,10 +608,14 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         store.s = s
     }
 
+    /// Every control that turns Steady mode on or off comes here, and the choice is kept for the next start.
     func setSteady(_ on: Bool) {
         guard let settings, state.steadyAvailable else { return }
         plog("Steady mode: asked \(on ? "on" : "off")")
         modeAskedAt = ProcessInfo.processInfo.systemUptime
+        // A choice made while Steady mode was waiting to come back on replaces that.
+        steadyPending.value = false
+        if store.s.steadyOn != on { store.s.steadyOn = on }
         settings.setSteady(on)
     }
 
@@ -796,7 +817,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     func restartApp() {
         plog("restart asked")
         guard Bundle.main.bundleURL.pathExtension == "app" else { return }
-        if state.steady { UserDefaults.standard.set(true, forKey: Self.resumeSteadyKey) }
+        // The new copy turns Steady mode back on from the saved choice; Steady mode on now is kept there too.
+        if state.steady, !store.s.steadyOn { store.s.steadyOn = true }
         leave { [weak self] in self?.relaunch() }
     }
 
@@ -1114,5 +1136,24 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             line = "Plug in your glasses."
         }
         if line != state.statusLine { state.statusLine = line }
+    }
+}
+
+/// A yes or no read on the main thread and the settings thread.
+final class SteadyPending: @unchecked Sendable {
+    private let lock = NSLock()
+    private var on = false
+
+    var value: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return on
+        }
+        set {
+            lock.lock()
+            on = newValue
+            lock.unlock()
+        }
     }
 }
