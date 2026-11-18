@@ -219,8 +219,8 @@ final class HidImuReader: @unchecked Sendable {
         }
         // VITURE: the Beast's motion sensor is interface 5; other models are tried interface by interface.
         return found.sorted { (a: HidCandidate, b: HidCandidate) -> Bool in
-            let fa: Bool = a.product == Glasses.vitureBeast && a.interface == VitureImuProtocol.beastImuInterface
-            let fb: Bool = b.product == Glasses.vitureBeast && b.interface == VitureImuProtocol.beastImuInterface
+            let fa: Bool = Glasses.isBeastProduct(a.product) && a.interface == VitureImuProtocol.beastImuInterface
+            let fb: Bool = Glasses.isBeastProduct(b.product) && b.interface == VitureImuProtocol.beastImuInterface
             if fa != fb { return fa }
             return (a.interface ?? 1000) < (b.interface ?? 1000)
         }

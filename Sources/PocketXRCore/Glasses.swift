@@ -28,6 +28,12 @@ public struct Glasses: Equatable, Sendable {
         0x043D: "XREAL 1S", 0x043E: "XREAL 1S", 0x0443: "XREAL One Pro+", 0x0444: "XREAL One Pro+",
     ]
     public static let vitureBeast = 0x1211
+    /// A second Beast USB id, reported by a tester (November 2026) with the same layout: HID on interface 5.
+    public static let vitureBeast1201 = 0x1201
+    /// The VITURE Beast's USB product ids.
+    public static let beastProducts: Set<Int> = [vitureBeast, vitureBeast1201]
+
+    public static func isBeastProduct(_ product: Int) -> Bool { beastProducts.contains(product) }
     public static let vitureMicrophone = 0x1102
     public static let airImu: [Int: String] = [
         0x0424: "XREAL Air", 0x0428: "XREAL Air 2", 0x0432: "XREAL Air 2 Pro", 0x0426: "XREAL Air 2 Ultra",
@@ -60,7 +66,7 @@ public struct Glasses: Equatable, Sendable {
     /// Glasses whose menu settings Pocket XR reads and puts right on every link: the Aura only.
     public var managed: Bool { family == .aura }
 
-    public var isBeast: Bool { family == .viture && product == Self.vitureBeast }
+    public var isBeast: Bool { family == .viture && Self.isBeastProduct(product) }
 
     /// The One family and the VITURE Beast send x right, y down, z front; the Aura x right, y up, z back.
     public var axes: HeadFusion.Axes { family == .one || isBeast ? .one : .aura }
@@ -103,7 +109,7 @@ public struct Glasses: Equatable, Sendable {
                            vendor: d.vendor, product: d.product)
         }
         let vit = devices.filter { $0.vendor == viture && $0.product != vitureMicrophone }
-        if let d = vit.first(where: { $0.product == vitureBeast }) ?? vit.first {
+        if let d = vit.first(where: { isBeastProduct($0.product) }) ?? vit.first {
             return Glasses(name: d.name.isEmpty ? "VITURE glasses" : d.name, family: .viture, vendor: d.vendor, product: d.product)
         }
         if let d = devices.first(where: { $0.vendor == xreal && $0.interfaceClasses.contains(0x02) }) {
