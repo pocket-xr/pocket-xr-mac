@@ -302,6 +302,14 @@ private func capabilityChecks() {
     let beast: Glasses? = found(Glasses.vitureBeast, classes: [0x03], vendor: Glasses.viture)
     check(beast?.family == .viture && beast?.hidImu == true && beast?.steadyCapable == false, "the VITURE Beast: USB HID, no Steady mode")
     check(beast.map { $0.axes == .one } ?? false, "the Beast sends x right, y down, z front")
+    // The Beast also comes as 0x1201 (a tester's, November 2026): the same rules, and it is preferred to a second VITURE id.
+    let beast1201: Glasses? = found(Glasses.vitureBeast1201, classes: [0x03], vendor: Glasses.viture)
+    check(beast1201?.isBeast == true && beast1201?.hidImu == true && beast1201?.steadyCapable == false, "the VITURE Beast 0x1201: USB HID, no Steady mode")
+    check(beast1201.map { $0.axes == .one } ?? false, "the Beast 0x1201 sends x right, y down, z front")
+    let otherViture = UsbDeviceInfo(vendor: Glasses.viture, product: 0x1301, interfaceClasses: [0x03], name: "")
+    let beastFirst: Glasses? = found(0x1201, classes: [0x03], vendor: Glasses.viture, extra: [otherViture])
+    check(beastFirst?.product == 0x1201, "the Beast 0x1201 is picked over another VITURE id")
+    check(Glasses.isBeastProduct(0x1211) && Glasses.isBeastProduct(0x1201) && !Glasses.isBeastProduct(0x1301) && !Glasses.isBeastProduct(Glasses.vitureMicrophone), "the Beast's ids are 0x1211 and 0x1201")
     let viture: Glasses? = found(0x1301, classes: [0x03], vendor: Glasses.viture)
     check(viture?.hidImu == true && (viture.map { $0.axes == .aura } ?? false), "other VITURE glasses: as the sensor sends")
 
