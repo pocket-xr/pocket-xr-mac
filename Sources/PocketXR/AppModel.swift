@@ -162,6 +162,8 @@ protocol AppActions: AnyObject {
     /// or hides it.
     func toggleLauncher()
     func setPocketMode(_ on: Bool)
+    /// Opens the next PC screen (PcScreens): a screen of the user's PC on a floating screen.
+    func openPcScreen()
     /// Starts or stops hand tracking now (the setting `handsOn` is what starts it with the glasses).
     func setHands(_ on: Bool)
     /// Hand tracking's pointer: aims the pointer along a ray given in the head's own frame, degrees (left and up

@@ -17,6 +17,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private lazy var tourWindow = TourWindowController(store: store, state: state, actions: self)
     private lazy var controlPanel = ControlPanelController(store: store, state: state, actions: self)
     private lazy var launcher = LauncherController(store: store, state: state, actions: self)
+    private let pcScreens = PcScreens()
     private lazy var pocket = PocketMode(state: state, actions: self)
     private lazy var controllerInput = ControllerInput(store: store, state: state, actions: self)
     private lazy var hands = HandTracking(store: store, state: state, actions: self)
@@ -317,6 +318,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
                     return
                 }
                 plog("virtual displays: removed, the glasses' display has been gone \(Int(gone)) s")
+                // A PC screen would land on the Mac's own screen.
+                self.pcScreens.closeAll()
                 self.captures.forEach { $0.stop() }
                 self.captures = []
                 self.displays = nil
@@ -631,6 +634,16 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         launcher.toggle(on: NSScreen.screens.first { $0.displayID == id })
     }
 
+    func openPcScreen() {
+        guard let screens = displays?.screens, !screens.isEmpty else { return }
+        // The floating screen the launcher (or the pointer) is on first.
+        pcScreens.openNext(screens: screens, preferred: min(pointerScreen ?? 0, screens.count - 1),
+                           say: { [weak self] line in self?.launcher.say(line) },
+                           done: { [weak self] in self?.launcher.close() })
+    }
+
+    @objc private func menuPcScreen() { openPcScreen() }
+
     func setPocketMode(_ on: Bool) {
         guard on != state.pocketMode else { return }
         // With no floating screen there is nowhere for the pointer to be.
@@ -834,6 +847,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         // Nothing of Pocket XR's is left over the Mac's screen, and the camera is let go.
         pocket.set(false)
         launcher.close()
+        pcScreens.closeAll()
         hands.stop()
         state.statusLine = "Putting the glasses back…"
         updateMenu()
@@ -854,6 +868,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
 
     private func relaunch() {
         quitting = true
+        pcScreens.closeAll()
         stopTracking()
         settings?.stop()
         let open = Process()
@@ -1000,6 +1015,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         }
         menu.addItem(item("Open the control panel", #selector(menuPanel)))
         menu.addItem(item("Launcher" + shortcutHint("launcher"), #selector(menuLauncher), on: state.launcherOpen, enabled: state.virtualScreens > 0))
+        menu.addItem(item("Open a PC screen", #selector(menuPcScreen), enabled: state.virtualScreens > 0))
         menu.addItem(item("Pocket mode" + shortcutHint("pocket"), #selector(menuPocket), on: state.pocketMode, enabled: state.virtualScreens > 0))
         menu.addItem(item("Hand tracking" + shortcutHint("hands"), #selector(menuHands), on: state.handsRunning))
         menu.addItem(.separator())

@@ -23,7 +23,16 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Pocket XR reads your glasses' head tracking over their USB cable, which macOS lists as a local network.</string>
+	<string>Pocket XR reads your glasses' head tracking over their USB cable, which macOS lists as a local network, and finds your PC for PC screens.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_nvstream._tcp</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Pocket XR watches your hands through your glasses' camera, to move the pointer and click when you pinch. The picture stays on your Mac.</string>
 	<key>NSHumanReadableCopyright</key>
