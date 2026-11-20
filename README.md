@@ -14,13 +14,22 @@ same rules, no account and no paid tier.
 
 ## Download
 
-1. Download `PocketXR-Mac-0.3.0.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
+1. Download `PocketXR-Mac-0.5.0.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
    open it. Move **Pocket XR** to Applications.
 2. Plug your glasses in and open Pocket XR. It lives in the menu bar, under a pair of glasses.
 3. macOS asks to allow **Screen Recording**: allow it in System Settings, Privacy & Security, Screen Recording, then
    open Pocket XR again. It is how Pocket XR shows your screens in the glasses.
 
 Needs macOS 14 or newer. One app for Intel and Apple Silicon Macs (Apple Silicon not tried yet).
+
+## Show this Mac on your phone
+
+New in 0.5.0: Pocket XR on your phone can show this Mac's screens in the glasses, with no Sunshine and no separate PC
+helper. Allow the phone once on the Mac, then allow Pocket XR under **Screen & System Audio Recording** and
+**Accessibility** when it asks. Each phone PC screen gets its own virtual screen here, at the shape of the phone's window.
+Pocket XR replaces the old **Pocket XR PC helper** app: it offers to quit it, and you can then move it and Sunshine to
+the Bin. Seen working with one phone and an Intel MacBook Air; see [the release notes](docs/release-notes-0.5.0.md) for
+what is untested.
 
 ## How it works
 
