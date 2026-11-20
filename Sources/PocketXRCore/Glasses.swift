@@ -35,8 +35,12 @@ public struct Glasses: Equatable, Sendable {
 
     public static func isBeastProduct(_ product: Int) -> Bool { beastProducts.contains(product) }
     public static let vitureMicrophone = 0x1102
+    /// The Air family models whose HID motion stream Pocket XR reads. The XBX A01 and A01+ (XREAL's USB id, the Air's
+    /// protocol on HID interface 1, as wheaney's nrealAirLinuxDriver hid_ids.c lists them) were added from a tester's
+    /// report (November 2026); untested by the project.
     public static let airImu: [Int: String] = [
         0x0424: "XREAL Air", 0x0428: "XREAL Air 2", 0x0432: "XREAL Air 2 Pro", 0x0426: "XREAL Air 2 Ultra",
+        0x0440: "XBX A01", 0x0442: "XBX A01+",
     ]
     public static let airFamily: Set<Int> = [
         0x0423, 0x0424, 0x0425, 0x0426, 0x0427, 0x0428, 0x0431, 0x0432, 0x043F, 0x0440, 0x0441, 0x0442,
@@ -90,8 +94,8 @@ public struct Glasses: Equatable, Sendable {
     /// series with the Eye the user turns 6DoF on in the glasses' own menu (SteadyMode.appAnchor).
     public var appAnchor: Bool { family == .aura }
 
-    /// Head tracking over USB HID: the Air family models whose stream is known (the Air, Air 2, Air 2 Pro and Air 2
-    /// Ultra), and VITURE glasses (experimental). None of them has been run on a Mac.
+    /// Head tracking over USB HID: the Air family models whose stream is known (the Air, Air 2, Air 2 Pro, Air 2 Ultra,
+    /// XBX A01 and A01+), and VITURE glasses (experimental). The Air family has not been run on a Mac by the project.
     public var hidImu: Bool { (family == .air && Self.airImu[product] != nil) || family == .viture }
 
     /// Finds the glasses among [devices], in the Deck's order: the Aura, the One family, the Air family, VITURE, then any

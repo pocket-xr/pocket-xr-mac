@@ -758,7 +758,13 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             let scale = s.backingScaleFactor
             return "\(s.localizedName): \(Int(s.frame.width * scale)) x \(Int(s.frame.height * scale)), \(s.maximumFramesPerSecond) Hz"
         }
-        let tracking = "\(state.imuHz) reports a second via \(imu?.connectedVia ?? hidImu?.connectedVia ?? "nothing"), bias \(state.biasReady ? "learnt" : "learning")"
+        var tracking = "\(state.imuHz) reports a second via \(imu?.connectedVia ?? hidImu?.connectedVia ?? "nothing"), bias \(state.biasReady ? "learnt" : "learning")"
+        // Why none come, when the HID stream is the link (the reader's own words), and Input Monitoring.
+        if state.imuHz == 0, let h = hidImu {
+            tracking += ". USB HID: \(h.status). Input Monitoring: \(HidImuReader.inputMonitoring())"
+        } else if state.imuHz == 0, glasses?.hidImu == true, !store.s.hidTracking {
+            tracking += ". USB HID head tracking is off in Settings"
+        }
         let text = GlassesReport.text(
             appVersion: state.version, system: ProcessInfo.processInfo.operatingSystemVersionString, glasses: glasses,
             usb: usb, links: GlassesNet.routes().map(\.description), displays: shown,
