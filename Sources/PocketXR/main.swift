@@ -21,6 +21,15 @@ if args.contains("--usb") {
     exit(0)
 }
 
+// PocketXR --hid-list [all]   the glasses' HID devices (XREAL and VITURE; "all": every one) with their USB interface
+//                             numbers, and Input Monitoring; nothing is written to any device
+if args.contains("--hid-list") {
+    let vendors = args.contains("all") ? [0] : [Glasses.xreal, Glasses.viture]
+    for v in vendors { for line in HidImuReader.list(vendor: v) { print(line) } }
+    print("Input Monitoring: \(HidImuReader.inputMonitoring())")
+    exit(0)
+}
+
 if args.contains("--imu-test") {
     Log.shared.echo = true
     let g = Glasses.detect(UsbDevices.list())
@@ -63,6 +72,28 @@ if let i = args.firstIndex(of: "--render-ui"), i + 1 < args.count {
     for f in files { print(f.path) }
     print("rendered \(files.count) pictures")
     exit(0)
+}
+
+// PocketXR --host [--seconds N]   this Mac as the PC end of the phone's PC screens alone, in the foreground (tests),
+//                                 logging to the usual log and Terminal
+// PocketXR --host-pin NNNN        gives a running host the PIN a pairing phone shows
+if let i = args.firstIndex(of: "--host-pin") {
+    let pin = i + 1 < args.count ? args[i + 1] : ""
+    guard pin.count == 4, pin.allSatisfy(\.isNumber) else { print("The PIN is four digits."); exit(2) }
+    try? FileManager.default.createDirectory(at: HostIdentity.folder, withIntermediateDirectories: true)
+    try? Data(pin.utf8).write(to: HostPins.file)
+    exit(0)
+}
+if args.contains("--host") {
+    Log.shared.echo = true
+    _ = NSApplication.shared
+    let service = HostService()
+    service.start()
+    if let i = args.firstIndex(of: "--seconds"), i + 1 < args.count, let s = Double(args[i + 1]) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + s) { service.stop(); exit(0) }
+    }
+    signal(SIGTERM) { _ in exit(0) }
+    RunLoop.main.run()
 }
 
 guard let device = MTLCreateSystemDefaultDevice() else {

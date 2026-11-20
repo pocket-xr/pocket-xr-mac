@@ -23,6 +23,10 @@ public enum AirImuProtocol {
     public static let cmdImuStream = 0x19
     /// The Air 2 Ultra, whose IMU is on HID interface 2.
     public static let air2Ultra = 0x0426
+    /// The XBX A01 and A01+: the Air's protocol, 64 byte reports, the IMU on HID interface 1 (the MCU on 0), as
+    /// nrealAirLinuxDriver's hid_ids.c (MIT) lists them. Untested by the project.
+    public static let xbxA01 = 0x0440
+    public static let xbxA01Plus = 0x0442
     /// m/s² in one g: the report's accelerometer unit to the fusion's.
     public static let g = 9.81
 
@@ -33,8 +37,14 @@ public enum AirImuProtocol {
         vendor == Glasses.xreal && modelName(product) != nil
     }
 
-    /// The HID interface the IMU streams on: 3, and 2 on the Air 2 Ultra.
-    public static func imuInterface(_ product: Int) -> Int { product == air2Ultra ? 2 : 3 }
+    /// The HID interface the IMU streams on: 3 (Air, Air 2, Air 2 Pro), 2 on the Air 2 Ultra, 1 on the XBX A01 and A01+.
+    public static func imuInterface(_ product: Int) -> Int {
+        switch product {
+        case air2Ultra: return 2
+        case xbxA01, xbxA01Plus: return 1
+        default: return 3
+        }
+    }
 
     /// CRC32 as zlib and java.util.zip.CRC32 compute it (polynomial 0xEDB88320, reflected), of [count] bytes from
     /// [from].

@@ -17,6 +17,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private lazy var tourWindow = TourWindowController(store: store, state: state, actions: self)
     private lazy var controlPanel = ControlPanelController(store: store, state: state, actions: self)
     private lazy var launcher = LauncherController(store: store, state: state, actions: self)
+    private let pcScreens = PcScreens()
+    /// This Mac as the PC end of the phone's PC screens (HostServer): on unless turned off in the menu.
+    private let host = HostService()
+    private static let hostKey = "host.on"
     private lazy var pocket = PocketMode(state: state, actions: self)
     private lazy var controllerInput = ControllerInput(store: store, state: state, actions: self)
     private lazy var hands = HandTracking(store: store, state: state, actions: self)
@@ -96,6 +100,14 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         }
         buildMenu()
         registerShortcuts()
+        if UserDefaults.standard.object(forKey: Self.hostKey) as? Bool ?? true {
+            host.start()
+            // Moving over from the separate PC helper app: asked once; the menu offers it after that.
+            if HostService.oldHelperRunning, !UserDefaults.standard.bool(forKey: "host.moveOverAsked") {
+                UserDefaults.standard.set(true, forKey: "host.moveOverAsked")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { MainActor.assumeIsolated { HostService.offerMoveOver() } }
+            }
+        }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in self.screensChanged() }
@@ -317,6 +329,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
                     return
                 }
                 plog("virtual displays: removed, the glasses' display has been gone \(Int(gone)) s")
+                // A PC screen would land on the Mac's own screen.
+                self.pcScreens.closeAll()
                 self.captures.forEach { $0.stop() }
                 self.captures = []
                 self.displays = nil
@@ -631,6 +645,26 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         launcher.toggle(on: NSScreen.screens.first { $0.displayID == id })
     }
 
+    /// Another computer's screen (Apollo or Sunshine there, with Moonlight here) on a floating screen of the glasses
+    /// plugged into this Mac. Not for glasses on a phone: the phone opens its PC screens itself.
+    func openPcScreen() {
+        guard state.glassesName != nil, let screens = displays?.screens, !screens.isEmpty else {
+            NSApp.activate(ignoringOtherApps: true)
+            let a = NSAlert()
+            a.messageText = "No glasses are plugged into this Mac"
+            a.informativeText = "This shows another computer's screen in glasses plugged into this Mac. Plug your glasses into this Mac first.\n\nGlasses on your phone? Open PC screens from Pocket XR on the phone; to show this Mac there, use Show this Mac on your phone in this menu."
+            a.addButton(withTitle: "OK")
+            a.runModal()
+            return
+        }
+        // The floating screen the launcher (or the pointer) is on first.
+        pcScreens.openNext(screens: screens, preferred: min(pointerScreen ?? 0, screens.count - 1),
+                           say: { [weak self] line in self?.launcher.say(line) },
+                           done: { [weak self] in self?.launcher.close() })
+    }
+
+    @objc private func menuPcScreen() { openPcScreen() }
+
     func setPocketMode(_ on: Bool) {
         guard on != state.pocketMode else { return }
         // With no floating screen there is nowhere for the pointer to be.
@@ -758,7 +792,13 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             let scale = s.backingScaleFactor
             return "\(s.localizedName): \(Int(s.frame.width * scale)) x \(Int(s.frame.height * scale)), \(s.maximumFramesPerSecond) Hz"
         }
-        let tracking = "\(state.imuHz) reports a second via \(imu?.connectedVia ?? hidImu?.connectedVia ?? "nothing"), bias \(state.biasReady ? "learnt" : "learning")"
+        var tracking = "\(state.imuHz) reports a second via \(imu?.connectedVia ?? hidImu?.connectedVia ?? "nothing"), bias \(state.biasReady ? "learnt" : "learning")"
+        // Why none come, when the HID stream is the link (the reader's own words), and Input Monitoring.
+        if state.imuHz == 0, let h = hidImu {
+            tracking += ". USB HID: \(h.status). Input Monitoring: \(HidImuReader.inputMonitoring())"
+        } else if state.imuHz == 0, glasses?.hidImu == true, !store.s.hidTracking {
+            tracking += ". USB HID head tracking is off in Settings"
+        }
         let text = GlassesReport.text(
             appVersion: state.version, system: ProcessInfo.processInfo.operatingSystemVersionString, glasses: glasses,
             usb: usb, links: GlassesNet.routes().map(\.description), displays: shown,
@@ -834,6 +874,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         // Nothing of Pocket XR's is left over the Mac's screen, and the camera is let go.
         pocket.set(false)
         launcher.close()
+        pcScreens.closeAll()
+        host.stop()
         hands.stop()
         state.statusLine = "Putting the glasses back…"
         updateMenu()
@@ -854,6 +896,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
 
     private func relaunch() {
         quitting = true
+        pcScreens.closeAll()
         stopTracking()
         settings?.stop()
         let open = Process()
@@ -1000,6 +1043,24 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         }
         menu.addItem(item("Open the control panel", #selector(menuPanel)))
         menu.addItem(item("Launcher" + shortcutHint("launcher"), #selector(menuLauncher), on: state.launcherOpen, enabled: state.virtualScreens > 0))
+        menu.addItem(item("Show another computer in these glasses", #selector(menuPcScreen)))
+        let pcNote = NSMenuItem(title: state.glassesName == nil
+            ? "    No glasses are plugged into this Mac. Glasses on a phone open PC screens from the phone."
+            : "    For the glasses plugged into this Mac. Glasses on a phone open PC screens from the phone.",
+            action: nil, keyEquivalent: "")
+        pcNote.isEnabled = false
+        menu.addItem(pcNote)
+        let phone = NSMenuItem(title: "Show this Mac on your phone", action: nil, keyEquivalent: "")
+        let phoneMenu = NSMenu()
+        phoneMenu.addItem(item("On: your phone can show this Mac's screens", #selector(menuHost), on: host.isOn))
+        phoneMenu.addItem(item("Permissions it needs…", #selector(menuHostPermissions)))
+        phoneMenu.addItem(item("Forget phones", #selector(menuHostForget), enabled: host.isOn))
+        if HostService.oldHelperRunning {
+            phoneMenu.addItem(.separator())
+            phoneMenu.addItem(item("Quit the old Pocket XR PC helper (Pocket XR does its job now)…", #selector(menuHostMoveOver)))
+        }
+        phone.submenu = phoneMenu
+        menu.addItem(phone)
         menu.addItem(item("Pocket mode" + shortcutHint("pocket"), #selector(menuPocket), on: state.pocketMode, enabled: state.virtualScreens > 0))
         menu.addItem(item("Hand tracking" + shortcutHint("hands"), #selector(menuHands), on: state.handsRunning))
         menu.addItem(.separator())
@@ -1090,6 +1151,13 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     @objc private func menuSendLogs() { sendLogs() }
     @objc private func menuRestart() { restartApp() }
     @objc private func menuQuit() { quit() }
+    @objc private func menuHost() {
+        if host.isOn { host.stop() } else { host.start() }
+        UserDefaults.standard.set(host.isOn, forKey: Self.hostKey)
+    }
+    @objc private func menuHostPermissions() { HostHelper.openPermissions() }
+    @objc private func menuHostForget() { host.forgetPhones() }
+    @objc private func menuHostMoveOver() { HostService.offerMoveOver() }
 
     @objc private func menuLayout(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let l = ArrangeLayout(rawValue: raw) else { return }

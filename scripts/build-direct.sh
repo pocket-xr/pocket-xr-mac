@@ -40,20 +40,37 @@ fi
 clang -c -fobjc-arc -fmodules -target "$TARGET" -isysroot "$SDK" -I Sources/CVirtualDisplay/include \
     Sources/CVirtualDisplay/CVirtualDisplay.m -o "$OUT/CVirtualDisplay.o"
 
+# The host's native pieces (Host*.swift): moonlight-common-c's ENet and nanors' Reed-Solomon, as SwiftPM's CHostNet.
+HN=Sources/CHostNet
+HOSTNET=()
+for c in $HN/enet/*.c $HN/nanors/rs.c $HN/nanors/obl/oblas_common.c $HN/nanors/obl/oblas_lite.c $HN/pxr_host.c; do
+    o="$OUT/hostnet-$(basename "${c%.c}").o"
+    clang -c -O2 -w -target "$TARGET" -isysroot "$SDK" -DNDEBUG -DHAS_SOCKLEN_T=1 -DHAS_FCNTL=1 -DHAS_IOCTL=1 -DHAS_POLL=1 \
+        -DHAS_GETADDRINFO=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_PTON=1 -DHAS_INET_NTOP=1 -DHAS_MSGHDR_FLAGS=1 \
+        -I $HN/include -I $HN/enet/include -I $HN/nanors -I $HN/nanors/obl "$c" -o "$o"
+    HOSTNET+=("$o")
+done
+
 cat > "$OUT/module.modulemap" <<'EOF'
 module CVirtualDisplay {
     header "CVirtualDisplay.h"
     export *
 }
+module CHostNet {
+    header "CHostNet.h"
+    export *
+}
 EOF
 cp Sources/CVirtualDisplay/include/CVirtualDisplay.h "$OUT/CVirtualDisplay.h"
+cp $HN/include/CHostNet.h "$OUT/CHostNet.h"
 
 swiftc ${VFS[@]+"${VFS[@]}"} -swift-version 5 -target "$TARGET" -sdk "$SDK" -O -parse-as-library -emit-module -emit-object -wmo \
     -module-name PocketXRCore -emit-module-path "$OUT/PocketXRCore.swiftmodule" \
     Sources/PocketXRCore/*.swift -o "$OUT/PocketXRCore.o"
 
 swiftc ${VFS[@]+"${VFS[@]}"} -swift-version 5 -target "$TARGET" -sdk "$SDK" -O -wmo -module-name PocketXR -I "$OUT" \
-    Sources/PocketXR/*.swift "$OUT/PocketXRCore.o" "$OUT/CVirtualDisplay.o" \
+    Sources/PocketXR/*.swift "$OUT/PocketXRCore.o" "$OUT/CVirtualDisplay.o" "${HOSTNET[@]}" \
     -framework AppKit -framework Metal -framework MetalKit -framework QuartzCore -framework ScreenCaptureKit \
-    -framework IOKit -framework CoreVideo -o "$OUT/PocketXR"
+    -framework IOKit -framework CoreVideo -framework VideoToolbox -framework CoreMedia \
+    -framework AudioToolbox -framework Security -framework Network -o "$OUT/PocketXR"
 echo "built $OUT/PocketXR"

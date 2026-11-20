@@ -60,6 +60,7 @@ final class HidImuReader: @unchecked Sendable {
     private var stopped = false
     private var started = false
     private var _connectedVia: String?
+    private var _status = "not started"
 
     // The open device's state. Touched on the reader's thread only.
     private var draining = false
@@ -76,6 +77,24 @@ final class HidImuReader: @unchecked Sendable {
 
     /// "USB HID (XREAL Air 2)" once reports arrive, else nil.
     var connectedVia: String? { lock.lock(); defer { lock.unlock() }; return _connectedVia }
+
+    /// Where the stream is, in words, for the glasses report: above all why no reports come ("Input Monitoring not
+    /// allowed", "interface 3 not among the glasses' HID devices", "start sent 3 times, no motion reports").
+    var status: String { lock.lock(); defer { lock.unlock() }; return _status }
+
+    private func setStatus(_ s: String) {
+        lock.lock(); let changed = _status != s; _status = s; lock.unlock()
+        if changed { plog("hid imu: status: \(s)") }
+    }
+
+    /// macOS's Input Monitoring for this app, in words (IOHIDCheckAccess, ListenEvent).
+    static func inputMonitoring() -> String {
+        switch IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) {
+        case kIOHIDAccessTypeGranted: return "allowed"
+        case kIOHIDAccessTypeDenied: return "not allowed"
+        default: return "not asked yet"
+        }
+    }
 
     /// The axes HeadFusion needs for this reader's samples: the same as `glasses.axes` (`.aura` for the Air family,
     /// whose reports are turned into head axes here, and for VITURE models other than the Beast; `.one` for the Beast).
@@ -127,13 +146,20 @@ final class HidImuReader: @unchecked Sendable {
         // The manager is never opened (that would open every HID device of the glasses): it only lists them, and the
         // one device chosen is opened by itself.
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-        plog("hid imu: looking for \(glasses.name)'s motion stream over USB HID (untested on a Mac)")
+        plog("hid imu: looking for \(glasses.name)'s motion stream over USB HID (untested on a Mac); Input Monitoring \(Self.inputMonitoring())")
+        setStatus("looking for the glasses' HID devices")
         while !isStopped {
             spin(0.2)
             let found: [HidCandidate] = candidates(manager)
             logCandidates(found)
             let order: [HidCandidate] = ordered(found)
             if order.isEmpty {
+                if found.isEmpty {
+                    setStatus("macOS lists no HID device of the glasses")
+                } else if glasses.family == .air {
+                    let have = found.compactMap(\.interface).map(String.init).joined(separator: ", ")
+                    setStatus("interface \(AirImuProtocol.imuInterface(glasses.product)) is not among the glasses' HID devices (macOS lists interfaces \(have.isEmpty ? "without numbers" : have))")
+                }
                 wait(2.0)
                 continue
             }
@@ -226,6 +252,21 @@ final class HidImuReader: @unchecked Sendable {
         }
     }
 
+    /// Every HID device of [vendor] (0: all) as a line: ids, name, USB interface, usage, report sizes. Writes nothing
+    /// to any device (PocketXR --hid-list, for a tester's report).
+    static func list(vendor: Int) -> [String] {
+        let manager: IOHIDManager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatching(manager, (vendor == 0 ? [:] : [kIOHIDVendorIDKey as String: vendor]) as CFDictionary)
+        guard let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
+        return devices.map { d -> HidCandidate in
+            HidCandidate(device: d, vendor: number(d, kIOHIDVendorIDKey) ?? 0, product: number(d, kIOHIDProductIDKey) ?? 0,
+                         name: (IOHIDDeviceGetProperty(d, kIOHIDProductKey as CFString) as? String) ?? "",
+                         interface: interfaceNumber(d), usagePage: number(d, kIOHIDPrimaryUsagePageKey) ?? 0,
+                         usage: number(d, kIOHIDPrimaryUsageKey) ?? 0, maxInput: number(d, kIOHIDMaxInputReportSizeKey) ?? 0,
+                         maxOutput: number(d, kIOHIDMaxOutputReportSizeKey) ?? 0)
+        }.map(\.line).sorted()
+    }
+
     private static func number(_ device: IOHIDDevice, _ key: String) -> Int? {
         guard let v = IOHIDDeviceGetProperty(device, key as CFString) else { return nil }
         return (v as? NSNumber)?.intValue
@@ -269,6 +310,13 @@ final class HidImuReader: @unchecked Sendable {
         let opened: IOReturn = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
         if opened != kIOReturnSuccess {
             plog("hid imu: could not open \(c.line): \(Self.words(opened))")
+            if opened == hidReturnNotPermitted || opened == hidReturnNotPrivileged {
+                // Puts Pocket XR in the Input Monitoring list (macOS asks once).
+                _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+                setStatus("Input Monitoring not allowed: macOS would not open \(c.interface.map { "interface \($0)" } ?? "the device"). Allow Pocket XR in System Settings, Privacy & Security, Input Monitoring, then open it again")
+            } else {
+                setStatus("could not open \(c.interface.map { "interface \($0)" } ?? "the device"): \(Self.words(opened))")
+            }
             return false
         }
         let size: Int = max(AirImuProtocol.packetBytes, c.maxInput)
@@ -312,9 +360,11 @@ final class HidImuReader: @unchecked Sendable {
         draining = false
         if !send(device, startCommand(), what: "start") {
             plog("hid imu: the start command was not accepted by \(c.line)")
+            setStatus("the start command was not accepted by \(c.interface.map { "interface \($0)" } ?? "the device"): \(lastSendError)")
             return false
         }
         plog("hid imu: motion stream asked for on \(c.line)")
+        setStatus("\(c.interface.map { "interface \($0)" } ?? "the device") open, motion stream asked for; waiting for reports")
         var askedAt = Date()
         var asks = 1
         var announced = false
@@ -324,6 +374,7 @@ final class HidImuReader: @unchecked Sendable {
                 announced = true
                 let model: String = glasses.family == .air ? (AirImuProtocol.modelName(glasses.product) ?? glasses.name) : glasses.name
                 setConnected("USB HID (\(model))")
+                setStatus("reports arriving from \(c.interface.map { "interface \($0)" } ?? "the device")")
                 plog("hid imu: samples arriving from \(c.line)")
             }
             let quietFor: Double = Date().timeIntervalSince(sessionSamples > 0 ? lastSampleAt : askedAt)
@@ -341,6 +392,7 @@ final class HidImuReader: @unchecked Sendable {
                 continue
             }
             plog("hid imu: no samples from \(c.line) (\(sessionOther) other reports)")
+            setStatus("\(c.interface.map { "interface \($0)" } ?? "the device") open and the start sent \(asks) times (report id \(lastReportId)), but no motion reports came (\(sessionOther) other reports); Input Monitoring \(Self.inputMonitoring())")
             return false
         }
         if removed { plog("hid imu: the glasses were unplugged") }
@@ -355,17 +407,32 @@ final class HidImuReader: @unchecked Sendable {
         glasses.family == .air ? AirImuProtocol.streamCommand(on: false) : VitureImuProtocol.padded(VitureImuProtocol.stop())
     }
 
-    /// Writes one 64 byte output report (report id 0: neither protocol numbers its reports).
+    private var lastSendError = ""
+    private var lastReportId = 0
+
+    /// Writes one 64 byte output report. The Air's command goes with its first byte (0xAA) as the report id, as hidapi
+    /// sends it on macOS (nrealAirLinuxDriver, which works there): the IMU interface numbers its reports (its own
+    /// start 0x01), and a SET_REPORT naming id 0 may be ignored. If macOS refuses that, report id 0. VITURE: id 0.
     private func send(_ device: IOHIDDevice, _ bytes: [UInt8], what: String) -> Bool {
-        let result: IOReturn = bytes.withUnsafeBufferPointer { (p: UnsafeBufferPointer<UInt8>) -> IOReturn in
-            guard let base = p.baseAddress else { return kIOReturnSuccess }
-            return IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, CFIndex(0), base, CFIndex(p.count))
+        func write(_ id: Int) -> IOReturn {
+            bytes.withUnsafeBufferPointer { (p: UnsafeBufferPointer<UInt8>) -> IOReturn in
+                guard let base = p.baseAddress else { return kIOReturnSuccess }
+                return IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, CFIndex(id), base, CFIndex(p.count))
+            }
         }
-        if result != kIOReturnSuccess {
-            plog("hid imu: the \(what) command was not written: \(Self.words(result))")
-            return false
+        let ids: [Int] = glasses.family == .air && !bytes.isEmpty ? [Int(bytes[0]), 0] : [0]
+        var result: IOReturn = kIOReturnSuccess
+        for id in ids {
+            result = write(id)
+            if result == kIOReturnSuccess {
+                if id != lastReportId || what == "start" { plog("hid imu: the \(what) command written (report id \(id))") }
+                lastReportId = id
+                return true
+            }
+            plog("hid imu: the \(what) command with report id \(id) was not written: \(Self.words(result))")
         }
-        return true
+        lastSendError = Self.words(result)
+        return false
     }
 
     /// One input report, on the reader's thread.

@@ -51,6 +51,20 @@ private func airChecks() {
     check(AirImuProtocol.modelName(0x0432) == "XREAL Air 2 Pro", "its name")
     check(AirImuProtocol.imuInterface(0x0432) == 3 && AirImuProtocol.imuInterface(0x0424) == 3, "the IMU is on interface 3")
     check(AirImuProtocol.imuInterface(0x0426) == 2, "and on 2 on the Air 2 Ultra")
+    // The XBX A01 and A01+ (XREAL's USB id): the Air's stream on HID interface 1 (nrealAirLinuxDriver's hid_ids.c).
+    check(AirImuProtocol.imuInterface(0x0440) == 1 && AirImuProtocol.imuInterface(0x0442) == 1, "the XBX A01 and A01+ stream on interface 1")
+    check(AirImuProtocol.imuInterface(0x0428) == 3, "the Air 2 stays on interface 3")
+    check(AirImuProtocol.isAir(vendor: 0x3318, product: 0x0442) && AirImuProtocol.modelName(0x0442) == "XBX A01+", "the XBX A01+ is an Air, by name")
+    check(AirImuProtocol.modelName(0x0440) == "XBX A01", "the XBX A01 by name")
+    let xbx = Glasses.detect([UsbDeviceInfo(vendor: 0x3318, product: 0x0442, interfaceClasses: [0x03, 0x03, 0x03], name: "xbx a01+")])
+    check(xbx?.name == "XBX A01+" && xbx?.family == .air && xbx?.hidImu == true, "the XBX A01+ is found as an Air with a HID stream")
+    check(xbx.map { GlassesReport.modelLines($0).contains("Head tracking link: USB HID, the Air family's stream on interface 1 (untested on a Mac)") } == true,
+          "the report names interface 1 for it")
+    let air = Glasses.detect([UsbDeviceInfo(vendor: 0x3318, product: 0x0424, interfaceClasses: [0x03, 0x03, 0x03, 0x03], name: "XREAL Air")])
+    check(air.map { GlassesReport.modelLines($0).contains("Head tracking link: USB HID, the Air family's stream on interface 3 (untested on a Mac)") } == true,
+          "the Air's report names interface 3")
+    // The command's first byte is what hidapi on macOS sends as the report id.
+    check(AirImuProtocol.streamCommand()[0] == 0xAA, "the command's first byte (the report id sent) is 0xAA")
     check(!AirImuProtocol.isAir(vendor: 0x3318, product: 0x0439), "the Aura is not an Air")
     check(!AirImuProtocol.isAir(vendor: 0x3318, product: 0x0437), "the One is not an Air")
     check(!AirImuProtocol.isAir(vendor: 0x1234, product: 0x0432), "another maker's device is not an Air")

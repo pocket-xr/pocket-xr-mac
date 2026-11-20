@@ -10,7 +10,7 @@ import SwiftUI
 
 /// The round buttons, in the order shown.
 enum LauncherButton: CaseIterable {
-    case recentre, steady, depth, pocket, hands, controlPanel, settings
+    case recentre, steady, depth, pocket, hands, pcScreen, controlPanel, settings
 
     var title: String {
         switch self {
@@ -19,6 +19,7 @@ enum LauncherButton: CaseIterable {
         case .depth: return "3D"
         case .pocket: return "Pocket mode"
         case .hands: return "Hands"
+        case .pcScreen: return "Other computer"
         case .controlPanel: return "Control panel"
         case .settings: return "Settings"
         }
@@ -32,6 +33,7 @@ enum LauncherButton: CaseIterable {
         case .depth: return ""
         case .pocket: return "moon"
         case .hands: return "hand.raised"
+        case .pcScreen: return "desktopcomputer"
         case .controlPanel: return "slider.horizontal.3"
         case .settings: return "gearshape"
         }
@@ -430,7 +432,7 @@ final class LauncherModel: ObservableObject {
         case .depth: return store.s.want3D
         case .pocket: return state.pocketMode
         case .hands: return state.handsRunning
-        case .recentre, .controlPanel, .settings: return false
+        case .recentre, .pcScreen, .controlPanel, .settings: return false
         }
     }
 
@@ -451,6 +453,9 @@ final class LauncherModel: ObservableObject {
             actions?.setPocketMode(!state.pocketMode)
         case .hands:
             actions?.setHands(!state.handsRunning)
+        case .pcScreen:
+            // The launcher stays open and says how it goes; it closes once Moonlight starts.
+            actions?.openPcScreen()
         case .controlPanel:
             onClose(.handedOver)
             actions?.openControlPanel()
@@ -550,6 +555,11 @@ final class LauncherController: NSObject, NSWindowDelegate {
 
     func close() {
         close(.handedOver)
+    }
+
+    /// A line under the launcher's buttons for a few seconds (nothing when it is closed).
+    func say(_ line: String) {
+        if open { model.say(line) }
     }
 
     private func show(on screen: NSScreen) {

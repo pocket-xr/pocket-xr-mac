@@ -24,6 +24,7 @@ tourChecks()
 controllerChecks()
 launcherChecks()
 handChecks()
+pcScreenChecks()
 
 print(failures == 0 ? "core checks: all \(checks) passed" : "core checks: \(failures) of \(checks) FAILED")
 exit(failures == 0 ? 0 : 1)

@@ -14,13 +14,22 @@ same rules, no account and no paid tier.
 
 ## Download
 
-1. Download `PocketXR-Mac-0.3.0.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
+1. Download `PocketXR-Mac-0.5.0.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
    open it. Move **Pocket XR** to Applications.
 2. Plug your glasses in and open Pocket XR. It lives in the menu bar, under a pair of glasses.
 3. macOS asks to allow **Screen Recording**: allow it in System Settings, Privacy & Security, Screen Recording, then
    open Pocket XR again. It is how Pocket XR shows your screens in the glasses.
 
 Needs macOS 14 or newer. One app for Intel and Apple Silicon Macs (Apple Silicon not tried yet).
+
+## Show this Mac on your phone
+
+New in 0.5.0: Pocket XR on your phone can show this Mac's screens in the glasses, with no Sunshine and no separate PC
+helper. Allow the phone once on the Mac, then allow Pocket XR under **Screen & System Audio Recording** and
+**Accessibility** when it asks. Each phone PC screen gets its own virtual screen here, at the shape of the phone's window.
+Pocket XR replaces the old **Pocket XR PC helper** app: it offers to quit it, and you can then move it and Sunshine to
+the Bin. Seen working with one phone and an Intel MacBook Air; see [the release notes](docs/release-notes-0.5.0.md) for
+what is untested.
 
 ## How it works
 
@@ -113,7 +122,13 @@ To see every tour step and settings pane as pictures, without glasses:
 | --- | --- | --- |
 | XREAL Aura | Yes, seen working | Yes, Pocket XR turns it on, seen working |
 | XREAL One, One Pro, One Pro+, 1S | Written, not tried on a Mac | Written, not tried on a Mac |
-| XREAL Air family, VITURE | Experimental switch in Settings, not tried on a Mac | From the glasses' own menu |
+| XREAL Air, Air 2, Air 2 Pro, Air 2 Ultra, VITURE | Experimental switch in Settings, not tried on a Mac by the project | From the glasses' own menu |
+| XBX A01, XBX A01+ | Experimental switch in Settings (the Air's stream on HID interface 1), untested | From the glasses' own menu |
+
+USB HID head tracking (the Air family, the XBX and VITURE) is off until **Head tracking for XREAL Air and VITURE
+(USB HID)** is turned on in Settings. macOS may also want Pocket XR allowed under Privacy & Security, **Input
+Monitoring**. If no head tracking comes, the glasses report (control panel) says why: the HID device it looked for,
+whether it opened, whether the start was taken, and Input Monitoring.
 
 Settings on the glasses themselves, as on Android:
 
@@ -134,3 +149,9 @@ command or a guessed one.
 ## Licence
 
 GPL-3.0, as Pocket XR. Pocket XR is a community project, not made by or affiliated with XREAL or VITURE.
+
+The part that lets your phone show this Mac's screens (`Sources/PocketXR/Host*.swift`, `Sources/CHostNet`) speaks
+the same protocol as Moonlight, and is compatible with Moonlight clients. It is ported in part from LizardByte's
+Sunshine and ClassicOldSong's Apollo (both GPL-3.0), through Pocket XR for Windows' host. It also uses two pieces of
+moonlight-common-c, each with its own MIT licence beside its source: ENet by Lee Salzman (`Sources/CHostNet/enet/LICENSE`)
+and nanors by Joseph Calderon (`Sources/CHostNet/nanors/LICENSE`).
