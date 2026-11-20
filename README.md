@@ -146,6 +146,14 @@ Pocket XR reads the glasses' motion. On the Aura and the One series it also send
 has already proven: 2D and 3D, Ultrawide, screen size, Spatial Anchor and follow mode. It never sends a firmware
 command or a guessed one.
 
+## Thanks
+
+People whose reports led to fixes:
+
+- **BlackSniper7** (Reddit): the XBX A01+ glasses report that led to XBX A01 and A01+ head tracking (0.5.0).
+- **MiaRabbitFan** (Reddit): the XREAL Air glasses report (0 reports a second) that led to the Air's start command
+  fix and the clearer head tracking line in the Glasses report (0.5.0).
+
 ## Licence
 
 GPL-3.0, as Pocket XR. Pocket XR is a community project, not made by or affiliated with XREAL or VITURE.

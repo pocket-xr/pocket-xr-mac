@@ -42,6 +42,12 @@ of the list of computers. The launcher's button is now **Other computer**.
   Settings.
 - USB HID head tracking is still a switch in Settings: **Head tracking for XREAL Air and VITURE (USB HID)**.
 
+## Thanks
+
+- **BlackSniper7** (Reddit), for the XBX A01+ glasses report that led to head tracking for the XBX A01 and A01+.
+- **MiaRabbitFan** (Reddit), for the XREAL Air glasses report (0 reports a second) that led to the Air's start command
+  fix and the clearer head tracking line in the Glasses report.
+
 ## Not tried yet
 
 - The XBX A01 and A01+.
