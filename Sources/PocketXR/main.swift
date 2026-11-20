@@ -21,6 +21,15 @@ if args.contains("--usb") {
     exit(0)
 }
 
+// PocketXR --hid-list [all]   the glasses' HID devices (XREAL and VITURE; "all": every one) with their USB interface
+//                             numbers, and Input Monitoring; nothing is written to any device
+if args.contains("--hid-list") {
+    let vendors = args.contains("all") ? [0] : [Glasses.xreal, Glasses.viture]
+    for v in vendors { for line in HidImuReader.list(vendor: v) { print(line) } }
+    print("Input Monitoring: \(HidImuReader.inputMonitoring())")
+    exit(0)
+}
+
 if args.contains("--imu-test") {
     Log.shared.echo = true
     let g = Glasses.detect(UsbDevices.list())

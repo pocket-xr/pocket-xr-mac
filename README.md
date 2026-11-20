@@ -113,7 +113,13 @@ To see every tour step and settings pane as pictures, without glasses:
 | --- | --- | --- |
 | XREAL Aura | Yes, seen working | Yes, Pocket XR turns it on, seen working |
 | XREAL One, One Pro, One Pro+, 1S | Written, not tried on a Mac | Written, not tried on a Mac |
-| XREAL Air family, VITURE | Experimental switch in Settings, not tried on a Mac | From the glasses' own menu |
+| XREAL Air, Air 2, Air 2 Pro, Air 2 Ultra, VITURE | Experimental switch in Settings, not tried on a Mac by the project | From the glasses' own menu |
+| XBX A01, XBX A01+ | Experimental switch in Settings (the Air's stream on HID interface 1), untested | From the glasses' own menu |
+
+USB HID head tracking (the Air family, the XBX and VITURE) is off until **Head tracking for XREAL Air and VITURE
+(USB HID)** is turned on in Settings. macOS may also want Pocket XR allowed under Privacy & Security, **Input
+Monitoring**. If no head tracking comes, the glasses report (control panel) says why: the HID device it looked for,
+whether it opened, whether the start was taken, and Input Monitoring.
 
 Settings on the glasses themselves, as on Android:
 
