@@ -65,6 +65,28 @@ if let i = args.firstIndex(of: "--render-ui"), i + 1 < args.count {
     exit(0)
 }
 
+// PocketXR --host [--seconds N]   this Mac as the PC end of the phone's PC screens alone, in the foreground (tests),
+//                                 logging to the usual log and Terminal
+// PocketXR --host-pin NNNN        gives a running host the PIN a pairing phone shows
+if let i = args.firstIndex(of: "--host-pin") {
+    let pin = i + 1 < args.count ? args[i + 1] : ""
+    guard pin.count == 4, pin.allSatisfy(\.isNumber) else { print("The PIN is four digits."); exit(2) }
+    try? FileManager.default.createDirectory(at: HostIdentity.folder, withIntermediateDirectories: true)
+    try? Data(pin.utf8).write(to: HostPins.file)
+    exit(0)
+}
+if args.contains("--host") {
+    Log.shared.echo = true
+    _ = NSApplication.shared
+    let service = HostService()
+    service.start()
+    if let i = args.firstIndex(of: "--seconds"), i + 1 < args.count, let s = Double(args[i + 1]) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + s) { service.stop(); exit(0) }
+    }
+    signal(SIGTERM) { _ in exit(0) }
+    RunLoop.main.run()
+}
+
 guard let device = MTLCreateSystemDefaultDevice() else {
     plog("no Metal device")
     exit(1)

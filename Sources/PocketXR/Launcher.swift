@@ -19,7 +19,7 @@ enum LauncherButton: CaseIterable {
         case .depth: return "3D"
         case .pocket: return "Pocket mode"
         case .hands: return "Hands"
-        case .pcScreen: return "PC screen"
+        case .pcScreen: return "Other computer"
         case .controlPanel: return "Control panel"
         case .settings: return "Settings"
         }

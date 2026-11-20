@@ -134,3 +134,9 @@ command or a guessed one.
 ## Licence
 
 GPL-3.0, as Pocket XR. Pocket XR is a community project, not made by or affiliated with XREAL or VITURE.
+
+The part that lets your phone show this Mac's screens (`Sources/PocketXR/Host*.swift`, `Sources/CHostNet`) speaks
+the same protocol as Moonlight, and is compatible with Moonlight clients. It is ported in part from LizardByte's
+Sunshine and ClassicOldSong's Apollo (both GPL-3.0), through Pocket XR for Windows' host. It also uses two pieces of
+moonlight-common-c, each with its own MIT licence beside its source: ENet by Lee Salzman (`Sources/CHostNet/enet/LICENSE`)
+and nanors by Joseph Calderon (`Sources/CHostNet/nanors/LICENSE`).

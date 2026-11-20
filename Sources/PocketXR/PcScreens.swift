@@ -151,8 +151,10 @@ final class PcScreens {
     }
 
     private nonisolated static func prepare(mdns: [PcHost], helper: PcHelper, running: Set<String>, width: Int, height: Int, say: @escaping (String) -> Void) -> Result<Ready, Trouble> {
-        var hosts = mdns
-        let pc = helper.find()
+        // This Mac is left out: its own host is for the phone, not for glasses plugged into this Mac.
+        let own = PcHelper.ownAddresses()
+        var hosts = mdns.filter { !own.contains($0.address) }
+        let pc = helper.find(excluding: own)
         if let pc {
             plog("PC screens: PC helper on \(pc.name) at \(pc.address)")
             // Its PC's Apollos at the ports the PC setup gives, for a network where mDNS does not get through.
@@ -164,7 +166,7 @@ final class PcScreens {
         let pcs = PcScreenPick.byPc(hosts)
         guard !pcs.isEmpty else {
             return .failure(Trouble(
-                words: "No PC found. On your PC, start Apollo and the Pocket XR PC helper, on the same network as this Mac.",
+                words: "No other computer found. On it, start Apollo (or Pocket XR for Windows), on the same network as this Mac.",
                 log: "no Apollo or Sunshine found (mDNS \(mdns.count), PC helper \(pc == nil ? "none" : "found"))"))
         }
         let last = UserDefaults.standard.string(forKey: lastPcKey)
