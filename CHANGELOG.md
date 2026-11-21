@@ -2,6 +2,17 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## 0.5.3
+
+Details: [docs/release-notes-0.5.3.md](docs/release-notes-0.5.3.md).
+
+- The first XREAL Air's display is found. macOS names it just "Air", with no maker's name, so Pocket XR never took it
+  for the glasses: head tracking ran, but nothing was drawn in them. A screen named "Air", "Air 2", "Air 2 Pro" or
+  "Air 2 Ultra" is now the glasses' display while Air-family glasses are on USB; never the Mac's built-in screen.
+  Pocket mode no longer covers it. The Air 2 names are assumed; untested. Not yet tried with an Air.
+
+Thanks to **Dmitriy** for the logs from his XREAL Air on a MacBook Air that showed this.
+
 ## 0.5.2
 
 Details: [docs/release-notes-0.5.2.md](docs/release-notes-0.5.2.md).
