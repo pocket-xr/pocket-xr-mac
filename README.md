@@ -35,7 +35,10 @@ what is untested.
 the Mac does not answer, sends it a wake packet. macOS wakes for it only with **Wake for network access** on (System
 Settings, Battery, Options; on a desktop Mac, Energy). On a MacBook that is only while it is plugged in. A MacBook with
 its lid closed sleeps unless an external display is connected. Pocket XR's menu (**Show this Mac on your phone**) says
-whether the setting is on; Pocket XR never changes it. Waking from sleep has not been tried yet.
+whether the setting is on; Pocket XR never changes it. Seen working with an Intel MacBook Air on its adapter, lid open:
+the phone woke it, its screen came on, and the picture came about 4 s after the stream started. On battery it did not
+wake. When a stream starts, Pocket XR wakes the Mac fully (the phone's packet alone wakes it with its screens off) and
+keeps it awake until the stream ends. Not tried: a desktop Mac, Ethernet, or a closed lid with an external display.
 
 ## How it works
 

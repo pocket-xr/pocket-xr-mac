@@ -6,7 +6,10 @@ func pcScreenChecks() {
     check(WakeInfo.macText([0, 0, 0, 0, 0, 0]) == nil && WakeInfo.macText([1, 2, 3]) == nil, "all zeros or short: none")
     // As the Air's own `pmset -g custom` prints it (20 Nov 2026): womp 0 on battery, 1 on the adapter.
     let laptop = "Battery Power:\n Sleep On Power Button 1\n womp                 0\n sleep                1\nAC Power:\n womp                 1\n sleep                1\n"
-    check(WakeInfo.networkWake(pmsetCustom: laptop) == .on, "a laptop: womp under AC Power")
+    check(WakeInfo.networkWake(pmsetCustom: laptop) == .onAdapter, "a laptop: womp under AC Power, not on battery")
+    let both = laptop.replacingOccurrences(of: " womp                 0", with: " womp                 1")
+    check(WakeInfo.networkWake(pmsetCustom: both) == .on, "a laptop with womp on battery too: on")
+    check(WakeInfo.hint(.onAdapter).contains("power adapter"), "the laptop hint says on the adapter")
     let off = laptop.replacingOccurrences(of: "AC Power:\n womp                 1", with: "AC Power:\n womp                 0")
     check(WakeInfo.networkWake(pmsetCustom: off) == .off, "womp 0 on AC: off")
     check(WakeInfo.networkWake(pmsetCustom: "AC Power:\n womp 1\n") == .on, "a desktop: one section")

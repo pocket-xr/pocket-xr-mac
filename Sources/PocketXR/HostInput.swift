@@ -11,8 +11,15 @@ final class HostInput: @unchecked Sendable {
                        buttonDown: UInt32 = 0x08, buttonUp: UInt32 = 0x09, scroll: UInt32 = 0x0A, text: UInt32 = 0x17,
                        hScroll: UInt32 = 0x55000001
 
+    /// The streamed display. Its place is read again on every move: macOS can move it after the stream starts (the
+    /// built-in screen going back to its own size moved Mike's PC screen from x 1280 to 1440, 20 Nov 2026, and the
+    /// pointer then landed 160 points left of the glasses pointer and never reached the right edge).
+    var display: CGDirectDisplayID = 0
     /// Where the streamed display is, in global points (top-left origin, as CGEvent takes them).
-    var area = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    var area: CGRect {
+        let b = display != 0 ? CGDisplayBounds(display) : .zero
+        return b.width > 0 && b.height > 0 ? b : CGDisplayBounds(CGMainDisplayID())
+    }
     private let source = CGEventSource(stateID: .hidSystemState)
     private var buttons: Set<CGMouseButton> = []
     private var flags: CGEventFlags = []
@@ -53,15 +60,18 @@ final class HostInput: @unchecked Sendable {
             let x = Self.be16(p, 0), y = Self.be16(p, 2)
             let w = max(1, Self.be16(p, 6) + 1), h = max(1, Self.be16(p, 8) + 1)
             let a = area
+            noteMoved(a)
             moveTo(CGPoint(x: a.minX + CGFloat(x) * (a.width - 1) / CGFloat(max(1, w - 1)),
                            y: a.minY + CGFloat(y) * (a.height - 1) / CGFloat(max(1, h - 1))))
         case Self.relMove where p.count >= 4:
-            let now = CGEvent(source: nil)?.location ?? CGPoint(x: area.midX, y: area.midY)
-            let inside = area.contains(now)
-            var x = (inside ? now.x : area.midX) + CGFloat(Self.be16(p, 0))
-            var y = (inside ? now.y : area.midY) + CGFloat(Self.be16(p, 2))
-            x = min(max(x, area.minX), area.maxX - 1)
-            y = min(max(y, area.minY), area.maxY - 1)
+            let a = area
+            noteMoved(a)
+            let now = CGEvent(source: nil)?.location ?? CGPoint(x: a.midX, y: a.midY)
+            let inside = a.contains(now)
+            var x = (inside ? now.x : a.midX) + CGFloat(Self.be16(p, 0))
+            var y = (inside ? now.y : a.midY) + CGFloat(Self.be16(p, 2))
+            x = min(max(x, a.minX), a.maxX - 1)
+            y = min(max(y, a.minY), a.maxY - 1)
             moveTo(CGPoint(x: x, y: y))
         case Self.buttonDown where p.count >= 1, Self.buttonUp where p.count >= 1:
             button(Int(p[0]), down: type == Self.buttonDown)
@@ -81,6 +91,16 @@ final class HostInput: @unchecked Sendable {
 
     /// The pointer to the middle of the streamed display (a stream starting).
     func centre() { moveTo(CGPoint(x: area.midX, y: area.midY)) }
+
+    /// One line when the streamed display is somewhere new (the first move, and each time macOS moves it).
+    private var placed: CGRect?
+    private func noteMoved(_ a: CGRect) {
+        guard a != placed else { return }
+        let first = placed == nil
+        placed = a
+        plog(String(format: "host: input: pointer on the screen at %.0f,%.0f, %.0fx%.0f%@", a.minX, a.minY, a.width, a.height,
+                    first ? "" : " (macOS moved it)"))
+    }
 
     private func post(_ e: CGEvent?) {
         guard let e else { return }

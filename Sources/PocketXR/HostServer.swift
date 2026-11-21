@@ -53,6 +53,7 @@ final class HostServer: @unchecked Sendable {
         var clientIp = ""
         /// Ended (or replaced) while its start was still under way: what the start makes after that is closed again.
         var ended = false
+        var keepsAwake = false // counted in HostAwake until it ends
         let encodeQueue = DispatchQueue(label: "host-encode", qos: .userInteractive)
     }
 
@@ -337,7 +338,10 @@ final class HostServer: @unchecked Sendable {
         s.clientIp = remote
         s.pingPayload = Self.hex(Self.random(8))
         s.connectData = UInt32.random(in: 1..<UInt32(Int32.max))
+        s.keepsAwake = true
         lock.unlock()
+        // Woken by the phone, the Mac is only half awake with its screens off: wake it fully, and keep it so.
+        HostAwake.streamStarted()
         plog("host \(index): \(resume ? "resume" : "launch") \(s.width)x\(s.height)@\(s.fps), virtual display asked \(q["virtualdisplay"] ?? "0")")
         // The virtual screen made ready now, while RTSP goes on (bringing one out can take seconds).
         let i = index, m = HostScreens.Mode.clamped(s.width, s.height, s.fps)
@@ -365,6 +369,7 @@ final class HostServer: @unchecked Sendable {
         s.video?.close()
         s.control?.close()
         s.capture = nil; s.encoder = nil; s.audio = nil; s.video = nil; s.control = nil
+        if s.keepsAwake { s.keepsAwake = false; HostAwake.streamEnded() }
         if s.display != nil {
             let i = index
             DispatchQueue.global().async { [shared] in shared.screens.idle(i) }
@@ -470,7 +475,7 @@ final class HostServer: @unchecked Sendable {
             return
         }
         let capDisplay = display ?? CGMainDisplayID()
-        s.input.area = CGDisplayBounds(capDisplay)
+        s.input.display = capDisplay
         let input = s.input
         control.input = { input.handle($0) }
         guard let encoder = HostEncoder(width: s.width, height: s.height, fps: s.fps, kbps: s.kbps, codec: s.codec, onFrame: { [weak s] frame, key, taken in
@@ -515,8 +520,20 @@ final class HostServer: @unchecked Sendable {
         capture.onAudio = { [weak audio] sb in audio?.captured(sb) }
         let (w, h, fps) = (s.width, s.height, s.fps)
         Task {
-            if let why = await capture.start(display: capDisplay, width: w, height: h, fps: fps, sound: true) {
-                plog("host \(i): no picture: \(why) (Pocket XR needs Screen Recording: System Settings, Privacy & Security)")
+            var why = await capture.start(display: capDisplay, width: w, height: h, fps: fps, sound: true)
+            // Screens just woken (the phone woke this Mac) can take a few seconds to be offered for capture.
+            var tries = 0
+            while why != nil, tries < 8, !s.ended {
+                tries += 1
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                why = await capture.start(display: capDisplay, width: w, height: h, fps: fps, sound: true)
+            }
+            if tries > 0, why == nil { plog("host \(i): the picture came after \(tries) s (screens waking)") }
+            if let why {
+                let cause = HostAwake.screensAsleep ? "this Mac's screens are asleep"
+                    : !HostPermissions.screenAllowed ? "Pocket XR needs Screen Recording: System Settings, Privacy & Security"
+                    : "macOS offered no screen to capture"
+                plog("host \(i): no picture: \(why) (\(cause))")
                 if ProcessInfo.processInfo.environment["PXR_HOST_TEST"] == "1" { HostTestSource.start(s, capture: capture, audio: audio) }
             } else {
                 plog("host \(i): capturing display \(capDisplay) at \(w)x\(h) up to \(fps)/s, with sound")
