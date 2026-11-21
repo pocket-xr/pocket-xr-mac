@@ -2,6 +2,13 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## Unreleased
+
+- Waking this Mac from the phone (Wake-on-LAN): a paired phone now gets this Mac's real MAC address (of the network
+  interface it reaches) instead of zeros, so it can send the wake packet it already sends to other computers. The menu
+  says whether **Wake for network access** is on, and where to turn it on. Untested: waking from sleep has not been
+  tried yet.
+
 ## 0.5.0
 
 Details: [docs/release-notes-0.5.0.md](docs/release-notes-0.5.0.md).

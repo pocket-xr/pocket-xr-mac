@@ -1055,6 +1055,11 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         phoneMenu.addItem(item("On: your phone can show this Mac's screens", #selector(menuHost), on: host.isOn))
         phoneMenu.addItem(item("Permissions it needs…", #selector(menuHostPermissions)))
         phoneMenu.addItem(item("Forget phones", #selector(menuHostForget), enabled: host.isOn))
+        if host.isOn {
+            let wake = NSMenuItem(title: WakeInfo.hint(host.networkWake), action: nil, keyEquivalent: "")
+            wake.isEnabled = false
+            phoneMenu.addItem(wake)
+        }
         if HostService.oldHelperRunning {
             phoneMenu.addItem(.separator())
             phoneMenu.addItem(item("Quit the old Pocket XR PC helper (Pocket XR does its job now)…", #selector(menuHostMoveOver)))

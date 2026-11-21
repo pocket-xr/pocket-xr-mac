@@ -31,6 +31,12 @@ Pocket XR replaces the old **Pocket XR PC helper** app: it offers to quit it, an
 the Bin. Seen working with one phone and an Intel MacBook Air; see [the release notes](docs/release-notes-0.5.0.md) for
 what is untested.
 
+**Waking this Mac from your phone** (Wake-on-LAN): once paired, the phone learns this Mac's network address and, when
+the Mac does not answer, sends it a wake packet. macOS wakes for it only with **Wake for network access** on (System
+Settings, Battery, Options; on a desktop Mac, Energy). On a MacBook that is only while it is plugged in. A MacBook with
+its lid closed sleeps unless an external display is connected. Pocket XR's menu (**Show this Mac on your phone**) says
+whether the setting is on; Pocket XR never changes it. Waking from sleep has not been tried yet.
+
 ## How it works
 
 Pocket XR adds 1 to 3 screens to your Mac, to the right of its own screen. Move the pointer off the right edge and

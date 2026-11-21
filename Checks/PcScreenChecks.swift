@@ -1,6 +1,17 @@
 import Foundation
 
 func pcScreenChecks() {
+    // Wake-on-LAN: the MAC as the phone reads it (all zeros is none), and "Wake for network access" from pmset.
+    check(WakeInfo.macText([0xA4, 0x83, 0xE7, 0x12, 0x34, 0x56]) == "a4:83:e7:12:34:56", "a MAC address as text")
+    check(WakeInfo.macText([0, 0, 0, 0, 0, 0]) == nil && WakeInfo.macText([1, 2, 3]) == nil, "all zeros or short: none")
+    // As the Air's own `pmset -g custom` prints it (20 Nov 2026): womp 0 on battery, 1 on the adapter.
+    let laptop = "Battery Power:\n Sleep On Power Button 1\n womp                 0\n sleep                1\nAC Power:\n womp                 1\n sleep                1\n"
+    check(WakeInfo.networkWake(pmsetCustom: laptop) == .on, "a laptop: womp under AC Power")
+    let off = laptop.replacingOccurrences(of: "AC Power:\n womp                 1", with: "AC Power:\n womp                 0")
+    check(WakeInfo.networkWake(pmsetCustom: off) == .off, "womp 0 on AC: off")
+    check(WakeInfo.networkWake(pmsetCustom: "AC Power:\n womp 1\n") == .on, "a desktop: one section")
+    check(WakeInfo.networkWake(pmsetCustom: "nothing here") == .unknown, "no womp line: unknown")
+    check(WakeInfo.hint(.off).contains("Wake for network access"), "the hint names the setting")
     // Addresses.
     check(PcHostAddress.parse(" 192.168.1.20 ")! == ("192.168.1.20", 47989), "a bare address takes the usual port")
     check(PcHostAddress.parse("192.168.1.20:48989")! == ("192.168.1.20", 48989), "address and port")
