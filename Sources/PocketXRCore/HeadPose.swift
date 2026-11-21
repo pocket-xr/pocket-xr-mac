@@ -250,6 +250,12 @@ public final class HeadPose: @unchecked Sendable {
         return HeadMath.yawPitchDeg(drawn)
     }
 
+    /// Fused samples taken so far, for a rate counted apart from drawn frames (RateMeter).
+    public var sampleCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return samples
+    }
+
     /// Head tracking reports a second, measured over the last second (counted as drawPose is called).
     public var reportsPerSecond: Int {
         lock.lock(); defer { lock.unlock() }

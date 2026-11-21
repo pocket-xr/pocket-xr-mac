@@ -74,6 +74,20 @@ final class HidImuReader: @unchecked Sendable {
 
     /// Samples read since start().
     private(set) var samples = 0
+    private var _readCount = 0
+    private var _clockWords = "timestamps: unit not decided yet"
+
+    /// Samples read since start(), as the reader's thread last published them (4 times a second).
+    var readCount: Int { lock.lock(); defer { lock.unlock() }; return _readCount }
+
+    /// The time stamps' unit in words ("timestamps: ns"), as last published.
+    var clockWords: String { lock.lock(); defer { lock.unlock() }; return _clockWords }
+
+    /// Publishes the count and the unit for other threads (on the reader's thread).
+    private func publish() {
+        let words = clockLine()
+        lock.lock(); _readCount = samples; _clockWords = words; lock.unlock()
+    }
 
     /// "USB HID (XREAL Air 2)" once reports arrive, else nil.
     var connectedVia: String? { lock.lock(); defer { lock.unlock() }; return _connectedVia }
@@ -506,6 +520,7 @@ final class HidImuReader: @unchecked Sendable {
         var announced = false
         while !isStopped && !removed {
             spin(0.25)
+            publish()
             if sessionSamples > 0 && !announced {
                 announced = true
                 let model: String = glasses.family == .air ? (AirImuProtocol.modelName(glasses.product) ?? glasses.name) : glasses.name

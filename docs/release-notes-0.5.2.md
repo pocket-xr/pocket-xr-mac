@@ -12,6 +12,18 @@
   an XBX, turn on **Head tracking for XREAL Air and VITURE (USB HID)** in Settings, then use **Send logs to Mike** in
   the menu.
 
+- **A head tracking diagnostic for USB HID glasses.** On one XREAL Air, the log showed motion samples arriving, but
+  the glasses report said 0 reports a second. The glasses report and the log now say:
+  - how many samples a second the HID reader reads;
+  - how many steps the head tracking used and dropped, and the time between the last dropped sample and the one before;
+  - whether the glasses' time stamps are read as ns or µs;
+  - how many frames a second are drawn in the glasses.
+
+  The log gets this line 10 s after samples start, and again if samples are read but none are used. "Reports a second"
+  is now counted 4 times a second instead of on each frame drawn, so it no longer reads 0 just because no frame was
+  drawn. Head tracking itself works as before. **Not yet tried with an Air**: if yours reads 0 reports a second, send
+  a glasses report and **Send logs to Mike**.
+
 Everything else is as in 0.5.1.
 
 ## Thanks

@@ -85,6 +85,7 @@ func trackingChecks() {
     trackingChainRecentreChecks()
     trackingChainFollowChecks()
     trackingChainHoldChecks()
+    trackingDiagnosticsChecks()
 }
 
 private func trackingSettingsChecks() {
@@ -483,4 +484,42 @@ private func trackingChainHoldChecks() {
     check(rig.draw() == Quat.identity, "after 5 s without reports the view is head-locked")
     rig.run(0.2)
     check(near(rig.pose.yawPitchDeg.yaw, 20, 1.0), "the stream back, the pose carries on from where it was (\(rig.pose.yawPitchDeg.yaw))")
+}
+
+/// The USB HID diagnostic: rates counted on the tick, the fusion's used and dropped steps, and the report's line.
+private func trackingDiagnosticsChecks() {
+    var m = RateMeter()
+    check(m.update(count: 0, now: 10) == 0, "a new meter reads 0")
+    check(m.update(count: 500, now: 10.5) == 0, "under a second, the meter waits")
+    check(m.update(count: 1000, now: 11) == 1000, "1000 in a second is 1000 a second (\(m.perSecond))")
+    check(m.update(count: 1000, now: 12.25) == 0, "nothing new for a second reads 0")
+    check(m.update(count: 3, now: 12.5) == 0 && m.perSecond == 0, "a count gone back (a new reader) starts again")
+    check(m.update(count: 123, now: 13.5) == 120, "and counts from there (\(m.perSecond))")
+
+    // Steps 1 ms apart are used; a jump of 1 s, or a time stamp gone back, is dropped. The first sample is no step.
+    let f = HeadFusion(axes: .aura)
+    let g = SIMD3<Double>(0, 0, 0), a = SIMD3<Double>(0, 9.81, 0)
+    for k in 1...10 { f.report(ImuSample(timestampNs: UInt64(k) * 1_000_000, gyro: g, accel: a), arrived: 1) }
+    check(f.steps == FusionSteps(used: 9, dropped: 0), "nine steps used, none dropped (\(f.steps))")
+    f.report(ImuSample(timestampNs: 1_010_000_000, gyro: g, accel: a), arrived: 2)
+    check(f.steps.dropped == 1 && near(f.steps.lastDroppedS ?? 0, 1.0), "a 1 s jump is dropped (\(f.steps))")
+    f.report(ImuSample(timestampNs: 1_009_000_000, gyro: g, accel: a), arrived: 2)
+    check(f.steps.dropped == 2 && near(f.steps.lastDroppedS ?? 0, -0.001), "a step back is dropped (\(f.steps))")
+    f.report(ImuSample(timestampNs: 1_010_000_000, gyro: g, accel: a), arrived: 2)
+    check(f.steps.used == 10 && f.steps.dropped == 2, "steps after it are used again (\(f.steps))")
+
+    // The fused samples HeadPose took, read apart from drawn frames.
+    let rig = TrackingRig()
+    rig.run(0.5)
+    check(rig.pose.sampleCount == 499, "HeadPose counts the fused samples it took (\(rig.pose.sampleCount))")
+
+    let line = TrackingDiagnostics.line(hidPerSecond: 1000, fusedPerSecond: 0,
+                                        steps: FusionSteps(used: 2100, dropped: 4521, lastDroppedS: 1.0),
+                                        clock: "timestamps: ns", framesPerSecond: 120)
+    check(line == "USB HID read 1000 samples a second; the fusion used 0 a second; steps: 2100 used, 4521 dropped "
+        + "(the last 1000.0 ms after the one before); timestamps: ns; glasses frames drawn: 120 a second",
+        "the diagnostic line: \(line)")
+    let none = TrackingDiagnostics.line(hidPerSecond: 0, fusedPerSecond: 0, steps: FusionSteps(),
+                                        clock: "timestamps: unit not decided yet", framesPerSecond: 0)
+    check(none.contains("0 used, 0 dropped;") && !none.contains("the last"), "no dropped step, no last one: \(none)")
 }
