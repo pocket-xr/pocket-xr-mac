@@ -351,6 +351,30 @@ private func capabilityChecks() {
     // Other XREAL glasses with a network interface are taken as One family for tracking, but get no settings sent.
     let unknown: Glasses? = found(0x0499)
     check(unknown?.family == .one && unknown?.steadyCapable == false && unknown?.sixDofCapable == false, "unknown XREAL glasses are not offered Steady mode")
+
+    screenNameChecks()
+}
+
+private func screenNameChecks() {
+    // The maker's name is the glasses' display, with or without an Air on USB.
+    check(Glasses.isGlassesScreen(name: "XREAL AURA", builtIn: false, airOnUsb: false), "\"XREAL AURA\" is the glasses")
+    check(Glasses.isGlassesScreen(name: "VITURE Beast", builtIn: false, airOnUsb: false), "a VITURE name is the glasses")
+    // The first XREAL Air shows on a Mac as just "Air" (a tester's MacBook Air, November 2026).
+    check(Glasses.isGlassesScreen(name: "Air", builtIn: false, airOnUsb: true), "\"Air\" is the glasses while an Air is on USB")
+    for name in ["Air 2", "Air 2 Pro", "Air 2 Ultra", "air", " AIR 2 PRO "] {
+        check(Glasses.isGlassesScreen(name: name, builtIn: false, airOnUsb: true), "\"\(name)\" is the glasses while an Air is on USB")
+    }
+    check(!Glasses.isGlassesScreen(name: "Air", builtIn: false, airOnUsb: false), "\"Air\" with no Air on USB is another monitor")
+    // Never the Mac's own screen, even one whose name would match, and never Pocket XR's floating screens.
+    check(!Glasses.isGlassesScreen(name: "Air", builtIn: true, airOnUsb: true), "the built-in screen is never the glasses")
+    check(!Glasses.isGlassesScreen(name: "Built-in Retina Display", builtIn: true, airOnUsb: true), "the MacBook's own screen is not the glasses")
+    check(!Glasses.isGlassesScreen(name: "Pocket XR 1", builtIn: false, airOnUsb: true), "Pocket XR's floating screen is not the glasses")
+    check(!Glasses.isGlassesScreen(name: "Pocket XR XREAL", builtIn: false, airOnUsb: false), "even one with XREAL in its name")
+    // Only the Air's own names: a monitor whose name merely has "Air" in it is not taken.
+    for name in ["MacBook Air", "Airplay Display", "Air 3", "Fair View", "LG Air"] {
+        check(!Glasses.isGlassesScreen(name: name, builtIn: false, airOnUsb: true), "\"\(name)\" is not the glasses")
+    }
+    check(Glasses.isGlassesScreen(name: "XREAL Air 2 Pro", builtIn: false, airOnUsb: false), "\"XREAL Air 2 Pro\" needs no Air on USB")
 }
 
 private func reportChecks() {

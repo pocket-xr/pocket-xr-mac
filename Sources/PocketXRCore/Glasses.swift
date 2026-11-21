@@ -128,4 +128,20 @@ public struct Glasses: Equatable, Sendable {
         return n.contains("XREAL") || n.contains("NREAL") || n.contains("VITURE") || n.contains("ROKID")
             || n.contains("RAYNEO")
     }
+
+    /// The names macOS gives an Air-family pair's display without the maker's name. The first XREAL Air shows as just
+    /// "Air" (a tester's MacBook Air, November 2026: Pocket XR 0.5.1 and 0.5.2 never found it, as the name has no
+    /// "XREAL"). "Air 2", "Air 2 Pro" and "Air 2 Ultra" are assumed from the model names; untested.
+    public static func isAirScreenName(_ name: String) -> Bool {
+        let n = name.uppercased().trimmingCharacters(in: .whitespaces)
+        return ["AIR", "AIR 2", "AIR 2 PRO", "AIR 2 ULTRA"].contains(n)
+    }
+
+    /// Whether a screen is the glasses' display: a maker's name ([isGlassesScreenName]), or an Air-family name
+    /// ([isAirScreenName]) while Air-family glasses are on USB, so a monitor that happens to be called "Air" is not
+    /// taken for them otherwise. Never the Mac's built-in screen, and never one of Pocket XR's own floating screens.
+    public static func isGlassesScreen(name: String, builtIn: Bool, airOnUsb: Bool) -> Bool {
+        if builtIn || name.hasPrefix("Pocket XR") { return false }
+        return isGlassesScreenName(name) || (airOnUsb && isAirScreenName(name))
+    }
 }

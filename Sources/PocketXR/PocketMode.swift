@@ -103,12 +103,10 @@ final class PocketMode {
 
     /// The Mac's own screens: every screen that is neither the glasses nor one of Pocket XR's floating screens.
     private func ownScreens() -> [NSScreen] {
-        let real: [NSScreen] = NSScreen.screens.filter {
-            !Glasses.isGlassesScreenName($0.localizedName) && !$0.localizedName.hasPrefix("Pocket XR")
-        }
+        let real: [NSScreen] = NSScreen.screens.filter { !$0.isGlassesScreen && !$0.isPocketXRScreen }
         if !real.isEmpty { return real }
         // Never the glasses: a fallback that covered them would black out the one thing there is to look at.
-        if let own = NSScreen.own, !Glasses.isGlassesScreenName(own.localizedName), !own.localizedName.hasPrefix("Pocket XR") {
+        if let own = NSScreen.own, !own.isGlassesScreen, !own.isPocketXRScreen {
             return [own]
         }
         return []
