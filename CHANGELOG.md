@@ -2,7 +2,9 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
-## Unreleased
+## 0.5.4
+
+Details: [docs/release-notes-0.5.4.md](docs/release-notes-0.5.4.md).
 
 - **Readability** (Settings, Space, Screens), for any glasses, off by default: one screen at 1440 x 810, shown 34
   degrees wide and centred, so text is larger and drawn about one screen pixel to one glasses pixel (42 pixels a
