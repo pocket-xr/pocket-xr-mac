@@ -53,6 +53,7 @@ final class HostServer: @unchecked Sendable {
         var clientIp = ""
         /// Ended (or replaced) while its start was still under way: what the start makes after that is closed again.
         var ended = false
+        var keepsAwake = false // counted in HostAwake until it ends
         let encodeQueue = DispatchQueue(label: "host-encode", qos: .userInteractive)
     }
 
@@ -172,7 +173,9 @@ final class HostServer: @unchecked Sendable {
         s += Self.e("HttpsPort", httpsPort)
         s += Self.e("ExternalPort", httpPort)
         s += Self.e("MaxLumaPixelsHEVC", shared.hasHevc ? "1869449984" : "0")
-        s += Self.e("mac", "00:00:00:00:00:00")
+        // The MAC address of the interface the phone reached this Mac on, so it can wake it from sleep (Wake-on-LAN);
+        // only to a paired phone over HTTPS, as Sunshine gives it. All zeros (none) otherwise.
+        s += Self.e("mac", paired ? (Self.macAddress(ofIp: local) ?? WakeInfo.none) : WakeInfo.none)
         // Apollo's bits as the PC helper gives a phone: input, clipboard both ways, launch, view.
         s += Self.e("Permission", paired ? (0x07031F00 | 0x4001800) : 0)
         if paired {
@@ -187,6 +190,41 @@ final class HostServer: @unchecked Sendable {
         s += Self.e("currentgameuuid", "")
         s += Self.e("state", game != 0 ? "SUNSHINE_SERVER_BUSY" : "SUNSHINE_SERVER_FREE")
         return Self.xml(200, "", s)
+    }
+
+    /// The MAC address of the network interface that has IPv4 address [ip] (en0, Wi-Fi or Ethernet), or nil.
+    static func macAddress(ofIp ip: String) -> String? {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard !ip.isEmpty, getifaddrs(&list) == 0, let first = list else { return nil }
+        defer { freeifaddrs(list) }
+        var name: String?
+        var links: [String: [UInt8]] = [:]
+        var p: UnsafeMutablePointer<ifaddrs>? = first
+        while let i = p {
+            defer { p = i.pointee.ifa_next }
+            guard let a = i.pointee.ifa_addr else { continue }
+            let ifName = String(cString: i.pointee.ifa_name)
+            if a.pointee.sa_family == sa_family_t(AF_INET) {
+                var text = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                a.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { s in
+                    var addr = s.pointee.sin_addr
+                    inet_ntop(AF_INET, &addr, &text, socklen_t(INET_ADDRSTRLEN))
+                }
+                if String(cString: text) == ip { name = ifName }
+            } else if a.pointee.sa_family == sa_family_t(AF_LINK) {
+                a.withMemoryRebound(to: sockaddr_dl.self, capacity: 1) { dl in
+                    let nlen = Int(dl.pointee.sdl_nlen), alen = Int(dl.pointee.sdl_alen)
+                    guard alen == 6 else { return }
+                    withUnsafePointer(to: &dl.pointee.sdl_data) { data in
+                        data.withMemoryRebound(to: UInt8.self, capacity: nlen + alen) { b in
+                            links[ifName] = (0..<alen).map { b[nlen + $0] }
+                        }
+                    }
+                }
+            }
+        }
+        guard let name, let bytes = links[name] else { return nil }
+        return WakeInfo.macText(bytes)
     }
 
     // MARK: Pairing (Apollo nvhttp.cpp getservercert ... clientpairingsecret)
@@ -300,7 +338,10 @@ final class HostServer: @unchecked Sendable {
         s.clientIp = remote
         s.pingPayload = Self.hex(Self.random(8))
         s.connectData = UInt32.random(in: 1..<UInt32(Int32.max))
+        s.keepsAwake = true
         lock.unlock()
+        // Woken by the phone, the Mac is only half awake with its screens off: wake it fully, and keep it so.
+        HostAwake.streamStarted()
         plog("host \(index): \(resume ? "resume" : "launch") \(s.width)x\(s.height)@\(s.fps), virtual display asked \(q["virtualdisplay"] ?? "0")")
         // The virtual screen made ready now, while RTSP goes on (bringing one out can take seconds).
         let i = index, m = HostScreens.Mode.clamped(s.width, s.height, s.fps)
@@ -328,6 +369,7 @@ final class HostServer: @unchecked Sendable {
         s.video?.close()
         s.control?.close()
         s.capture = nil; s.encoder = nil; s.audio = nil; s.video = nil; s.control = nil
+        if s.keepsAwake { s.keepsAwake = false; HostAwake.streamEnded() }
         if s.display != nil {
             let i = index
             DispatchQueue.global().async { [shared] in shared.screens.idle(i) }
@@ -433,7 +475,7 @@ final class HostServer: @unchecked Sendable {
             return
         }
         let capDisplay = display ?? CGMainDisplayID()
-        s.input.area = CGDisplayBounds(capDisplay)
+        s.input.display = capDisplay
         let input = s.input
         control.input = { input.handle($0) }
         guard let encoder = HostEncoder(width: s.width, height: s.height, fps: s.fps, kbps: s.kbps, codec: s.codec, onFrame: { [weak s] frame, key, taken in
@@ -478,8 +520,20 @@ final class HostServer: @unchecked Sendable {
         capture.onAudio = { [weak audio] sb in audio?.captured(sb) }
         let (w, h, fps) = (s.width, s.height, s.fps)
         Task {
-            if let why = await capture.start(display: capDisplay, width: w, height: h, fps: fps, sound: true) {
-                plog("host \(i): no picture: \(why) (Pocket XR needs Screen Recording: System Settings, Privacy & Security)")
+            var why = await capture.start(display: capDisplay, width: w, height: h, fps: fps, sound: true)
+            // Screens just woken (the phone woke this Mac) can take a few seconds to be offered for capture.
+            var tries = 0
+            while why != nil, tries < 8, !s.ended {
+                tries += 1
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                why = await capture.start(display: capDisplay, width: w, height: h, fps: fps, sound: true)
+            }
+            if tries > 0, why == nil { plog("host \(i): the picture came after \(tries) s (screens waking)") }
+            if let why {
+                let cause = HostAwake.screensAsleep ? "this Mac's screens are asleep"
+                    : !HostPermissions.screenAllowed ? "Pocket XR needs Screen Recording: System Settings, Privacy & Security"
+                    : "macOS offered no screen to capture"
+                plog("host \(i): no picture: \(why) (\(cause))")
                 if ProcessInfo.processInfo.environment["PXR_HOST_TEST"] == "1" { HostTestSource.start(s, capture: capture, audio: audio) }
             } else {
                 plog("host \(i): capturing display \(capDisplay) at \(w)x\(h) up to \(fps)/s, with sound")

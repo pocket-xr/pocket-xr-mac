@@ -2,6 +2,19 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## 0.5.1
+
+- Waking this Mac from the phone (Wake-on-LAN): a paired phone now gets this Mac's real MAC address (of the network
+  interface it reaches) instead of zeros, so it can send the wake packet it already sends to other computers. The menu
+  says whether **Wake for network access** is on, and on a MacBook that it works only on the power adapter. Seen
+  working on an Intel MacBook Air on its adapter, over Wi-Fi.
+- A stream starting wakes the Mac fully and keeps it awake until the stream ends. Woken by the phone, macOS woke the
+  Air only halfway, with its screen off, so the stream had no picture, and it went back to sleep within a minute.
+- The phone's pointer now lands where it points. macOS can move Pocket XR's screen after a stream starts (here, when
+  the built-in screen went back to its own size), and the pointer kept the old place: it landed 160 points to the
+  left and could not reach the right edge.
+- "No picture" now says why: the Mac's screens asleep, Screen Recording not allowed, or no screen offered.
+
 ## 0.5.0
 
 Details: [docs/release-notes-0.5.0.md](docs/release-notes-0.5.0.md).

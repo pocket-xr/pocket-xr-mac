@@ -377,6 +377,7 @@ final class HostService: @unchecked Sendable {
         s.pins.dismiss = { Self.closePinBox() }
         hosts = (1...HostServer.basePorts.count).map { HostServer(index: $0, shared: s) }
         hosts.forEach { $0.start() }
+        readNetworkWake()
         let h = HostHelper(shared: s)
         h.start()
         helper = h
@@ -393,6 +394,26 @@ final class HostService: @unchecked Sendable {
         shared?.screens.removeAll()
         shared = nil
         plog("host: stopped")
+    }
+
+    /// macOS's "Wake for network access", read at start (pmset -g custom; read only, never changed here).
+    private(set) var networkWake: WakeInfo.NetworkWake = .unknown
+
+    func readNetworkWake() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            p.arguments = ["-g", "custom"]
+            let out = Pipe()
+            p.standardOutput = out
+            p.standardError = FileHandle.nullDevice
+            guard (try? p.run()) != nil else { return }
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            let wake = WakeInfo.networkWake(pmsetCustom: String(decoding: data, as: UTF8.self))
+            self?.networkWake = wake
+            plog("host: Wake for network access: \(wake)")
+        }
     }
 
     /// Phones forgotten: none is paired, none is allowed to use the PC helper's words.
