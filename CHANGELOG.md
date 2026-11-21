@@ -2,6 +2,16 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## Unreleased
+
+- **Readability** (Settings, Space, Screens), for any glasses, off by default: one screen at 1440 x 810, shown 34
+  degrees wide and centred, so text is larger and drawn about one screen pixel to one glasses pixel (42 pixels a
+  degree, against 48 for the usual 1920 x 1080 at 40 degrees). Turning it on keeps the number of screens, the size
+  and any screens moved by hand; turning it off puts exactly those back. The layout, distance, curve, Sharper text and
+  the Space's place are left alone. The screen's size takes effect when Pocket XR opens again. The log has a line with
+  the before and after values each time. From Dmitriy's own change (one 1440 x 810 screen at 30 degrees); 34 degrees
+  here because 30 would draw text no larger than the usual screens on a Mac. Not yet tried with glasses.
+
 ## 0.5.3
 
 Details: [docs/release-notes-0.5.3.md](docs/release-notes-0.5.3.md).

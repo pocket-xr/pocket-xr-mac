@@ -51,6 +51,14 @@ struct SettingsSpacePane: View {
                 note: "Gives each screen twice the pixels (HiDPI). Takes effect when Pocket XR opens again.",
                 isOn: $store.s.sharperText
             )
+            SettingsDivider()
+            SettingsToggleRow(
+                "Readability",
+                note: "Larger, clearer text: one screen at 1440 x 810, \(SettingsFormat.degrees(SpaceSettings.readabilityWidthDeg)) wide. "
+                    + "Turning it off puts your screens and size back as they were. Takes effect when Pocket XR opens again. "
+                    + "Not yet tried with glasses.",
+                isOn: Binding(get: { store.s.readability }, set: { on in store.s.setReadability(on) })
+            )
         }
     }
 

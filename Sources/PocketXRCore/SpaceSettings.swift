@@ -143,6 +143,21 @@ extension SpaceSettings {
     }
 }
 
+/// What Readability changed when it was turned on, to be put back exactly when it is turned off.
+public struct ReadabilityBefore: Codable, Equatable, Sendable {
+    public var screens: Int
+    public var widthDeg: Double
+    public var screenYawDeg: [Double]
+    public var screenPitchDeg: [Double]
+
+    public init(screens: Int, widthDeg: Double, screenYawDeg: [Double], screenPitchDeg: [Double]) {
+        self.screens = screens
+        self.widthDeg = widthDeg
+        self.screenYawDeg = screenYawDeg
+        self.screenPitchDeg = screenPitchDeg
+    }
+}
+
 /// Every setting Pocket XR for Mac keeps between runs. One Codable value: it is the settings file (Save settings to a
 /// file, Restore) and what UserDefaults holds. A missing field in an older file takes its default.
 public struct SpaceSettings: Codable, Equatable, Sendable {
@@ -175,6 +190,12 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     /// Steady mode as the user last chose it. While it is on, Steady mode comes back on when the glasses connect and
     /// their settings link has settled (when Pocket XR starts, or after an unplug). Unplugging or quitting keeps it.
     public var steadyOn = false
+    /// Readability: one screen at 1440x810, shown [Self.readabilityWidthDeg] wide, so text is larger and drawn about one
+    /// screen pixel to one glasses pixel. Off by default; turned on and off with [setReadability], which keeps what it
+    /// changed in [readabilityBefore] and puts it back. The screen's size takes effect when Pocket XR opens again.
+    public var readability = false
+    /// What Readability changed, kept while it is on: put back exactly when it is turned off.
+    public var readabilityBefore: ReadabilityBefore?
 
     // The picture
     /// 3D side by side: each eye its own picture.
@@ -240,6 +261,48 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     public static let steadyGapRange = 0.0...3.0
     public static let offsetPitchRange = -40.0...40.0
 
+    /// The virtual displays' size: 1920x1080, or 1440x810 (the same 16:9 shape) with Readability on.
+    public static let normalScreenSize = (width: 1920, height: 1080)
+    public static let readabilityScreenSize = (width: 1440, height: 810)
+    /// Readability's screen width as seen. Glasses with a 1920 pixel wide picture across about 46 degrees (the XREAL
+    /// Air) show about 42 pixels a degree; 1440 pixels across 34 degrees is 42 a degree, so each screen pixel is about one
+    /// glasses pixel. The usual 1920 pixels across 40 degrees is 48 a degree: text smaller, and squeezed. (The tester's
+    /// own change used 30 degrees, 48 pixels a degree, which on a Mac draws text no larger than the usual screens.)
+    public static let readabilityWidthDeg = 34.0
+
+    /// The size each virtual display is made at.
+    public var screenSize: (width: Int, height: Int) { readability ? Self.readabilityScreenSize : Self.normalScreenSize }
+
+    /// Turns Readability on or off. On keeps the screens, size and screen moves as they are, then sets one screen,
+    /// [readabilityWidthDeg] wide, centred (no screen moves). Off puts exactly those back. Doing it twice does nothing
+    /// more. Changes nothing else: layout, distance, curve, Sharper text and the Space's own place are left alone.
+    public mutating func setReadability(_ on: Bool) {
+        guard on != readability else { return }
+        if on {
+            readabilityBefore = ReadabilityBefore(screens: screens, widthDeg: widthDeg, screenYawDeg: screenYawDeg, screenPitchDeg: screenPitchDeg)
+            screens = 1
+            widthDeg = Self.readabilityWidthDeg
+            screenYawDeg = []
+            screenPitchDeg = []
+        } else if let b = readabilityBefore {
+            screens = b.screens
+            widthDeg = b.widthDeg
+            screenYawDeg = b.screenYawDeg
+            screenPitchDeg = b.screenPitchDeg
+        }
+        readability = on
+        if !on { readabilityBefore = nil }
+    }
+
+    /// What the log says Readability changed: the values it set, from and to.
+    public static func readabilityLine(from old: SpaceSettings, to new: SpaceSettings) -> String {
+        func size(_ s: SpaceSettings) -> String { "\(s.screenSize.width)x\(s.screenSize.height)" }
+        func deg(_ d: Double) -> String { String(format: "%.0f", d) }
+        func moved(_ s: SpaceSettings) -> String { s.screensMoved ? "moved" : "none" }
+        return "Readability: \(new.readability ? "on" : "off"); screens \(old.screens) -> \(new.screens), width \(deg(old.widthDeg)) -> "
+            + "\(deg(new.widthDeg)) degrees, screen moves \(moved(old)) -> \(moved(new)), display \(size(old)) -> \(size(new))"
+    }
+
     /// Every value brought inside its range (a hand-edited or older file).
     public var clamped: SpaceSettings {
         var s = self
@@ -303,6 +366,8 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         steadyZoom = try c.decodeIfPresent(Double.self, forKey: .steadyZoom) ?? d.steadyZoom
         steadyGapDeg = try c.decodeIfPresent(Double.self, forKey: .steadyGapDeg) ?? d.steadyGapDeg
         steadyOn = try c.decodeIfPresent(Bool.self, forKey: .steadyOn) ?? d.steadyOn
+        readability = try c.decodeIfPresent(Bool.self, forKey: .readability) ?? d.readability
+        readabilityBefore = try c.decodeIfPresent(ReadabilityBefore.self, forKey: .readabilityBefore) ?? d.readabilityBefore
         screenYawDeg = try c.decodeIfPresent([Double].self, forKey: .screenYawDeg) ?? d.screenYawDeg
         screenPitchDeg = try c.decodeIfPresent([Double].self, forKey: .screenPitchDeg) ?? d.screenPitchDeg
     }

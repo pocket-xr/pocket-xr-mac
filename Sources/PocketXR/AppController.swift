@@ -90,6 +90,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     /// The screen count and text sharpness the virtual displays were made with.
     private var madeScreens = 0
     private var madeSharper = false
+    private var madeWidth = 0
     /// The screen the pointer is on (an index into the virtual displays), nil while it is on the Mac's own screen.
     private var pointerScreen: Int?
     /// Where the head has been pointing, for "Pointer follows head": the screen and since when.
@@ -371,7 +372,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if displays == nil {
             madeScreens = store.s.screens
             madeSharper = store.s.sharperText
-            let d = VirtualDisplays(count: madeScreens, hiDPI: madeSharper)
+            madeWidth = store.s.screenSize.width
+            let d = VirtualDisplays(count: madeScreens, width: store.s.screenSize.width, height: store.s.screenSize.height, hiDPI: madeSharper)
             displays = d
             recompute()
             d.arrange(glasses: glassesID, panels: placements)
@@ -409,8 +411,9 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             settings?.apply()
         }
         if displays != nil {
-            state.needsRestart = new.screens != madeScreens || new.sharperText != madeSharper
+            state.needsRestart = new.screens != madeScreens || new.sharperText != madeSharper || new.screenSize.width != madeWidth
         }
+        if old.readability != new.readability { plog(SpaceSettings.readabilityLine(from: old, to: new)) }
         if old.shortcuts != new.shortcuts { registerShortcuts() }
         if old.launchAtLogin != new.launchAtLogin { setLaunchAtLogin(new.launchAtLogin) }
         if old.hidTracking != new.hidTracking, let g = glasses, !g.networkImu {

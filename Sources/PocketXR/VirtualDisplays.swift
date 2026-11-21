@@ -3,7 +3,8 @@ import CoreGraphics
 import CVirtualDisplay
 import PocketXRCore
 
-/// The screens the Mac's apps live on while Pocket XR runs: 1 to 3 virtual displays, each 1920x1080 at 60 Hz.
+/// The screens the Mac's apps live on while Pocket XR runs: 1 to 3 virtual displays, each 1920x1080 at 60 Hz
+/// (1440x810 with Readability on).
 ///
 /// Every use of CoreGraphics' private virtual display classes is here. They are made once per session and never
 /// added or removed while capture runs: Apple bug FB17797423 makes a new capture stream pick the wrong display after a
@@ -43,7 +44,7 @@ final class VirtualDisplays {
             s.hiDPI = hiDPI ? 1 : 0
             s.modes = [CGVirtualDisplayMode(width: UInt(width), height: UInt(height), refreshRate: 60)]
             guard display.apply(s) else {
-                plog("virtual display \(i + 1): its 1920x1080 mode was refused")
+                plog("virtual display \(i + 1): its \(width)x\(height) mode was refused")
                 continue
             }
             screens.append(Screen(display: display, id: display.displayID, width: width, height: height))
