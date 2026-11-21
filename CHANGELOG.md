@@ -2,7 +2,22 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## 0.5.2
+
+Details: [docs/release-notes-0.5.2.md](docs/release-notes-0.5.2.md).
+
+- XBX A01 and A01+ head tracking, take two: if the glasses' interface 1 stays silent for about 6 s, Pocket XR wakes
+  their controller on interface 0 the way XR Gaming's driver does (a start-up handshake, then a "heartbeat" every
+  100 ms), asks again, then tries interface 2, and uses whichever sends motion. The heartbeat stops with head tracking.
+  The log names each HID interface tried and the first bytes each sends. Ported from Pocket XR for Steam Deck 0.6.1.
+  Not yet tried with the glasses.
+
+Thanks to **Pierre Zammit** for testing the Steam Deck version with his XBX A01+ and sending logs, and to
+**BlackSniper7** (Reddit) for the XBX A01+ glasses report on the Mac, which led to these changes.
+
 ## 0.5.1
+
+Details: [docs/release-notes-0.5.1.md](docs/release-notes-0.5.1.md).
 
 - Waking this Mac from the phone (Wake-on-LAN): a paired phone now gets this Mac's real MAC address (of the network
   interface it reaches) instead of zeros, so it can send the wake packet it already sends to other computers. The menu
