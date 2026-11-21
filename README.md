@@ -14,7 +14,7 @@ same rules, no account and no paid tier.
 
 ## Download
 
-1. Download `PocketXR-Mac-0.5.0.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
+1. Download `PocketXR-Mac-0.5.1.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
    open it. Move **Pocket XR** to Applications.
 2. Plug your glasses in and open Pocket XR. It lives in the menu bar, under a pair of glasses.
 3. macOS asks to allow **Screen Recording**: allow it in System Settings, Privacy & Security, Screen Recording, then
@@ -31,7 +31,7 @@ Pocket XR replaces the old **Pocket XR PC helper** app: it offers to quit it, an
 the Bin. Seen working with one phone and an Intel MacBook Air; see [the release notes](docs/release-notes-0.5.0.md) for
 what is untested.
 
-**Waking this Mac from your phone** (Wake-on-LAN): once paired, the phone learns this Mac's network address and, when
+**Waking this Mac from your phone** (Wake-on-LAN, new in [0.5.1](docs/release-notes-0.5.1.md)): once paired, the phone learns this Mac's network address and, when
 the Mac does not answer, sends it a wake packet. macOS wakes for it only with **Wake for network access** on (System
 Settings, Battery, Options; on a desktop Mac, Energy). On a MacBook that is only while it is plugged in. A MacBook with
 its lid closed sleeps unless an external display is connected. Pocket XR's menu (**Show this Mac on your phone**) says
