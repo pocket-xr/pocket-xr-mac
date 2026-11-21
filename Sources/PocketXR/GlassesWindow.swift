@@ -103,15 +103,29 @@ extension NSScreen {
         (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).map { CGDirectDisplayID($0.uint32Value) }
     }
 
-    /// The glasses' display: a screen whose name says XREAL, VITURE and the like (not one of Pocket XR's own).
+    /// Whether Air-family glasses were on USB at the last look (AppController sets it each time the screens change).
+    /// While they are, a screen named just "Air" is theirs: macOS gives the first XREAL Air's display no maker's name.
+    static var airOnUsb = false
+
+    /// Whether this screen is the glasses' display (see Glasses.isGlassesScreen): never the built-in screen, never one
+    /// of Pocket XR's own floating screens.
+    var isGlassesScreen: Bool {
+        Glasses.isGlassesScreen(name: localizedName, builtIn: displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false,
+                                airOnUsb: NSScreen.airOnUsb)
+    }
+
+    /// Whether this is one of Pocket XR's own floating screens (which can only be seen in the glasses).
+    var isPocketXRScreen: Bool { localizedName.hasPrefix("Pocket XR") }
+
+    /// The glasses' display: a screen whose name says XREAL, VITURE and the like, or "Air" while an Air is on USB.
     static var glasses: NSScreen? {
-        screens.first { Glasses.isGlassesScreenName($0.localizedName) && !$0.localizedName.hasPrefix("Pocket XR") }
+        screens.first { $0.isGlassesScreen }
     }
 
     /// The Mac's own screen, where Pocket XR's windows belong: the built-in one, else the first that is neither the
     /// glasses nor one of Pocket XR's floating screens (which can only be seen in the glasses).
     static var own: NSScreen? {
-        let real = screens.filter { !Glasses.isGlassesScreenName($0.localizedName) && !$0.localizedName.hasPrefix("Pocket XR") }
+        let real = screens.filter { !$0.isGlassesScreen && !$0.isPocketXRScreen }
         return real.first { $0.displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false } ?? real.first ?? main
     }
 }

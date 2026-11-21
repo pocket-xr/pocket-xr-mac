@@ -56,6 +56,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private var displaysWereRemoved = false
     /// When the glasses' display was last seen to go, nil while it is there.
     private var glassesGoneSince: Double?
+    /// Looks again at a screen named "Air" while no Air is on USB yet (see screensChanged).
+    private var airRechecks = 0
     /// Set by Pocket XR 0.3.0 and earlier when it started itself again with Steady mode on. Now the saved
     /// `steadyOn` setting does that job; a key left behind is read once at start and taken into it.
     private nonisolated static let resumeSteadyKey = "resume_steady"
@@ -171,6 +173,21 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if found != glasses {
             plog("glasses: \(found?.name ?? "none") (USB: \(UsbDevices.describe(usb.filter { $0.vendor == Glasses.xreal || $0.vendor == Glasses.viture })))")
             glassesChanged(to: found)
+        }
+        NSScreen.airOnUsb = found?.family == .air
+        if NSScreen.glasses == nil, !NSScreen.airOnUsb,
+           NSScreen.screens.contains(where: { Glasses.isAirScreenName($0.localizedName) }) {
+            // A screen named "Air" with no Air on USB: the display can come a moment before the USB devices are listed,
+            // so look again a few times before taking it for an unrelated monitor.
+            if airRechecks < 5 {
+                airRechecks += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in MainActor.assumeIsolated { self?.screensChanged() } }
+            } else if airRechecks == 5 {
+                airRechecks += 1
+                plog("glasses display: a screen named \"Air\" is not taken for the glasses, no Air-family glasses are on USB")
+            }
+        } else {
+            airRechecks = 0
         }
         guard let screen = NSScreen.glasses else {
             if window != nil { plog("glasses display: gone") }
