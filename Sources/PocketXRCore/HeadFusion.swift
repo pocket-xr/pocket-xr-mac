@@ -71,6 +71,7 @@ public final class HeadFusion: @unchecked Sendable {
     private var clock = ImuClock()
     private var newest: HeadSample?
     private var sink: ((HeadSample) -> Void)?
+    private var stepCounts = FusionSteps()
 
     /// Recentres made so far (the first sample's and the one when the bias is first known count too).
     public private(set) var recentres = 0
@@ -84,6 +85,12 @@ public final class HeadFusion: @unchecked Sendable {
     public private(set) var biasReady = false
     public private(set) var restBlocks = 0
     public private(set) var lastGyro = SIMD3<Double>(0, 0, 0)
+
+    /// The steps used and dropped so far, for the glasses report.
+    public var steps: FusionSteps {
+        lock.lock(); defer { lock.unlock() }
+        return stepCounts
+    }
 
     public init(axes: Axes) {
         sign = axes.sign
@@ -123,7 +130,12 @@ public final class HeadFusion: @unchecked Sendable {
         }
         let dt = Double(Int64(bitPattern: s.timestampNs &- last)) / 1e9
         lastTs = s.timestampNs
-        guard dt > 0, dt < 0.05 else { return false }
+        guard dt > 0, dt < 0.05 else {
+            stepCounts.dropped += 1
+            stepCounts.lastDroppedS = dt
+            return false
+        }
+        stepCounts.used += 1
         let an = (a * a).sum().squareRoot()
         gMag = gMag.map { 0.999 * $0 + 0.001 * an } ?? an
         learnBias(g, s.timestampNs)

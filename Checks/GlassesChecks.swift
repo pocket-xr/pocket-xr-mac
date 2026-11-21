@@ -63,6 +63,27 @@ private func airChecks() {
     let air = Glasses.detect([UsbDeviceInfo(vendor: 0x3318, product: 0x0424, interfaceClasses: [0x03, 0x03, 0x03, 0x03], name: "XREAL Air")])
     check(air.map { GlassesReport.modelLines($0).contains("Head tracking link: USB HID, the Air family's stream on interface 3 (untested on a Mac)") } == true,
           "the Air's report names interface 3")
+    // The XBX's MCU frame, as nrealAirLinuxDriver lays it out (Pocket XR for Steam Deck 0.6.1's test): 0xFD, the CRC32
+    // of everything after it, length 17 + data, a timestamp, the id, 5 reserved bytes, the data.
+    let mcu: [UInt8] = AirImuProtocol.mcuCommand(0x31, Array("3.1.1".utf8))
+    check(mcu[0] == 0xFD && mcu.count == 5 + 17 + 5, "the MCU frame is 0xFD and 27 bytes for 5 bytes of data")
+    check(mcu[5] == 22 && mcu[6] == 0 && Array(mcu[7..<15]) == [UInt8](repeating: 0, count: 8), "its length (22) and a zero timestamp")
+    check(mcu[15] == 0x31 && mcu[16] == 0 && Array(mcu[17..<22]) == [0, 0, 0, 0, 0] && Array(mcu[22...]) == Array("3.1.1".utf8),
+          "its id, 5 reserved bytes and the SDK version")
+    let mcuCrc = UInt32(mcu[1]) | UInt32(mcu[2]) << 8 | UInt32(mcu[3]) << 16 | UInt32(mcu[4]) << 24
+    check(mcuCrc == AirImuProtocol.crc32(Array(mcu[5...])), "its CRC32 covers everything after it")
+    let beat: [UInt8] = AirImuProtocol.mcuHeartbeat(nowNs: 123)
+    check(beat.count == 30 && beat[15] == 0x1A && beat[16] == 0 && beat[22] == 123, "the heartbeat is 0x1A with the time, 30 bytes")
+    check(AirImuProtocol.mcuBootstrap.map(\.id) == [0x26, 0x57, 0x12, 0x02, 0x34, 0x35, 0x31], "the handshake's order")
+    // Which interface is tried when: the XBX's IMU alone, then with the MCU woken, then interface 2; an Air 2 only 3.
+    check(AirImuProtocol.tryOrder(product: 0x0442, interfaces: [0, 1, 2]) == [.imu(1), .wakeMcu, .imuWithMcu(1), .imu(2)],
+          "the XBX A01+: interface 1, the MCU, 1 again, then 2")
+    check(AirImuProtocol.tryOrder(product: 0x0440, interfaces: [1, 2]) == [.imu(1), .imu(2)], "no MCU interface: 1 then 2")
+    check(AirImuProtocol.tryOrder(product: 0x0428, interfaces: [0, 1, 2, 3, 4]) == [.imu(3)], "the Air 2: interface 3 only, no MCU")
+    check(AirImuProtocol.tryOrder(product: 0x0424, interfaces: [0, 1, 2]) == [], "the Air without interface 3: nothing written")
+    check(AirImuProtocol.tryOrder(product: 0x0426, interfaces: [0, 1, 2, 3]) == [.imu(2)], "the Air 2 Ultra: interface 2 only")
+    check(AirImuProtocol.isXbx(0x0442) && AirImuProtocol.isXbx(0x0440) && !AirImuProtocol.isXbx(0x0424), "which models are the XBX")
+    check(AirImuProtocol.hexStart([0x01, 0x02, 0xFF], 2) == "01 02 ...", "the log's hex")
     // The command's first byte is what hidapi on macOS sends as the report id.
     check(AirImuProtocol.streamCommand()[0] == 0xAA, "the command's first byte (the report id sent) is 0xAA")
     check(!AirImuProtocol.isAir(vendor: 0x3318, product: 0x0439), "the Aura is not an Air")

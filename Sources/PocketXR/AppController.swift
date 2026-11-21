@@ -39,6 +39,14 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private var headPose: HeadPose?
     private var imu: ImuReader?
     private var hidImu: HidImuReader?
+    // Rates counted on the tick, not per drawn frame (RateMeter), and what the USB HID diagnostic has logged.
+    private var framesDrawn = 0
+    private var fusedRate = RateMeter()
+    private var hidRate = RateMeter()
+    private var frameRate = RateMeter()
+    private var hidReadingSince: Double?
+    private var hidSummaryLogged = false
+    private var hidStallLogged = false
     private var settings: SettingsControl?
     private var settingsState = SettingsControl.State()
     private var hotKeys = [HotKey]()
@@ -457,6 +465,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
 
     private func frame(_ drawable: CAMetalDrawable) {
         guard let renderer, displays != nil else { return }
+        framesDrawn += 1
         var head = Quat.identity
         var shown = placements
         // In Steady mode the glasses hold the picture, so the app draws it fixed to the display.
@@ -504,8 +513,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         updateEdgeHint()
         state.fps = window?.glassesView.fps ?? 0
         state.capturing = captures.filter { $0.texture != nil }.count
+        let now = ProcessInfo.processInfo.systemUptime
+        frameRate.update(count: framesDrawn, now: now)
         if let pose = headPose, let f = fusion {
-            let hz = pose.reportsPerSecond
+            let hz = fusedRate.update(count: pose.sampleCount, now: now)
             state.imuHz = hz
             state.trackingOn = hz > 0
             state.biasReady = f.biasReady
@@ -513,12 +524,47 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             state.yawDeg = yp.yaw
             state.pitchDeg = yp.pitch
         } else {
+            fusedRate = RateMeter()
             state.trackingOn = false
             state.imuHz = 0
         }
+        watchHidTracking(now)
         let allowed = CGPreflightScreenCaptureAccess()
         if allowed != state.screenRecordingAllowed { state.screenRecordingAllowed = allowed }
         updateStatus()
+    }
+
+    /// The USB HID head tracking diagnostic line, or nil when head tracking is not over USB HID.
+    private func hidDiagnostics() -> String? {
+        guard let h = hidImu, let f = fusion else { return nil }
+        return TrackingDiagnostics.line(hidPerSecond: hidRate.perSecond, fusedPerSecond: fusedRate.perSecond,
+                                        steps: f.steps, clock: h.clockWords, framesPerSecond: frameRate.perSecond)
+    }
+
+    /// Logs the diagnostic once 10 s after USB HID samples start, and once each time the reader reads samples that
+    /// the fusion does not use. It only reads and logs.
+    private func watchHidTracking(_ now: Double) {
+        guard let h = hidImu else {
+            hidRate = RateMeter()
+            hidReadingSince = nil
+            hidSummaryLogged = false
+            hidStallLogged = false
+            return
+        }
+        let read = hidRate.update(count: h.readCount, now: now)
+        guard read > 0 else { return }
+        let since = hidReadingSince ?? now
+        hidReadingSince = since
+        if !hidSummaryLogged && now - since >= 10, let line = hidDiagnostics() {
+            hidSummaryLogged = true
+            plog("hid imu: after 10 s: \(line)")
+        }
+        if fusedRate.perSecond > 0 {
+            hidStallLogged = false
+        } else if !hidStallLogged && now - since >= 3, let line = hidDiagnostics() {
+            hidStallLogged = true
+            plog("hid imu: samples read but none used: \(line)")
+        }
     }
 
     private func trackPointer() {
@@ -796,6 +842,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         // Why none come, when the HID stream is the link (the reader's own words), and Input Monitoring.
         if state.imuHz == 0, let h = hidImu {
             tracking += ". USB HID: \(h.status). Input Monitoring: \(HidImuReader.inputMonitoring())"
+        }
+        if let line = hidDiagnostics() {
+            tracking += ". Diagnostics: \(line)"
+            plog("glasses report: hid imu: \(line)")
         } else if state.imuHz == 0, glasses?.hidImu == true, !store.s.hidTracking {
             tracking += ". USB HID head tracking is off in Settings"
         }

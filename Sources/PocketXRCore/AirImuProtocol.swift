@@ -37,6 +37,75 @@ public enum AirImuProtocol {
         vendor == Glasses.xreal && modelName(product) != nil
     }
 
+    public static func isXbx(_ product: Int) -> Bool { product == xbxA01 || product == xbxA01Plus }
+
+    // The XBX's MCU, on HID interface 0. wheaney's nrealAirLinuxDriver (mcu_hid.c, hid_ids.c, MIT; what XR Gaming uses)
+    // marks the XBX A01 and A01+ as needing an MCU "heartbeat" before the IMU streams: a start-up handshake, then 0x1A
+    // with the time every 100 ms (the sequence found by taowen's ar-glass-lib). A tester's A01+ sent nothing at all on
+    // interface 1 without it (Pocket XR for Steam Deck 0.6.0, November 2026). Ported from Pocket XR for Steam Deck
+    // 0.6.1's hidimu.py. Untested by the project.
+    public static let xbxMcuInterface = 0
+    public static let mcuHead: UInt8 = 0xFD
+    public static let mcuHeartbeatId = 0x1A
+    public static let mcuSdkVersion: [UInt8] = Array("3.1.1".utf8)
+    /// The handshake, in order: 0x26, 0x57, 0x12 (1), 0x02 (1), 0x34, 0x35, then 0x31 with the SDK version.
+    public static let mcuBootstrap: [(id: Int, data: [UInt8])] = [
+        (0x26, []), (0x57, []), (0x12, [1, 0, 0, 0]), (0x02, [1, 0, 0, 0]), (0x34, []), (0x35, []), (0x31, mcuSdkVersion),
+    ]
+
+    /// An XREAL MCU frame: 0xFD, a CRC32 (little endian) of everything after it, the length (17 + data, u16), a
+    /// timestamp (u64), the message id (u16), 5 reserved bytes, the data. Not padded.
+    public static func mcuCommand(_ id: Int, _ data: [UInt8] = [], timestamp: UInt64 = 0) -> [UInt8] {
+        let length = 17 + data.count
+        var body = [UInt8]()
+        body.append(UInt8(length & 0xFF)); body.append(UInt8((length >> 8) & 0xFF))
+        for k in 0..<8 { body.append(UInt8(truncatingIfNeeded: timestamp >> (8 * UInt64(k)))) }
+        body.append(UInt8(id & 0xFF)); body.append(UInt8((id >> 8) & 0xFF))
+        body += [UInt8](repeating: 0, count: 5)
+        body += data
+        let crc = crc32(body)
+        var out: [UInt8] = [mcuHead]
+        for k in 0..<4 { out.append(UInt8(truncatingIfNeeded: crc >> (8 * UInt32(k)))) }
+        return out + body
+    }
+
+    /// The heartbeat: 0x1A with the time (ns) as its data.
+    public static func mcuHeartbeat(nowNs: UInt64) -> [UInt8] {
+        var t = [UInt8]()
+        for k in 0..<8 { t.append(UInt8(truncatingIfNeeded: nowNs >> (8 * UInt64(k)))) }
+        return mcuCommand(mcuHeartbeatId, t)
+    }
+
+    /// One step of looking for the stream.
+    public enum Try: Equatable, Sendable {
+        /// Ask this interface for the stream and wait for samples.
+        case imu(Int)
+        /// Ask this interface again, only if the MCU heartbeat is running.
+        case imuWithMcu(Int)
+        /// Wake the XBX's MCU (interface 0): the handshake, then the heartbeat.
+        case wakeMcu
+    }
+
+    /// The steps, in order, for [product] with HID [interfaces] listed. Every model: its IMU interface. The XBX also:
+    /// if that stays silent, the MCU woken and the IMU interface asked again, then each other interface (not the
+    /// MCU's), lowest first, as Pocket XR for Steam Deck 0.6.1 does.
+    public static func tryOrder(product: Int, interfaces: Set<Int>) -> [Try] {
+        let wanted = imuInterface(product)
+        var steps: [Try] = interfaces.contains(wanted) ? [.imu(wanted)] : []
+        guard isXbx(product) else { return steps }
+        if interfaces.contains(xbxMcuInterface) {
+            steps.append(.wakeMcu)
+            if interfaces.contains(wanted) { steps.append(.imuWithMcu(wanted)) }
+        }
+        for n in interfaces.sorted() where n != wanted && n != xbxMcuInterface { steps.append(.imu(n)) }
+        return steps
+    }
+
+    /// The first [n] bytes in hex, for the log ("01 02 1f 00 ...").
+    public static func hexStart(_ bytes: [UInt8], _ n: Int = 16) -> String {
+        bytes.prefix(n).map { String(format: "%02x", $0) }.joined(separator: " ") + (bytes.count > n ? " ..." : "")
+    }
+
     /// The HID interface the IMU streams on: 3 (Air, Air 2, Air 2 Pro), 2 on the Air 2 Ultra, 1 on the XBX A01 and A01+.
     public static func imuInterface(_ product: Int) -> Int {
         switch product {

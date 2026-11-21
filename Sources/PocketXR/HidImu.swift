@@ -74,6 +74,20 @@ final class HidImuReader: @unchecked Sendable {
 
     /// Samples read since start().
     private(set) var samples = 0
+    private var _readCount = 0
+    private var _clockWords = "timestamps: unit not decided yet"
+
+    /// Samples read since start(), as the reader's thread last published them (4 times a second).
+    var readCount: Int { lock.lock(); defer { lock.unlock() }; return _readCount }
+
+    /// The time stamps' unit in words ("timestamps: ns"), as last published.
+    var clockWords: String { lock.lock(); defer { lock.unlock() }; return _clockWords }
+
+    /// Publishes the count and the unit for other threads (on the reader's thread).
+    private func publish() {
+        let words = clockLine()
+        lock.lock(); _readCount = samples; _clockWords = words; lock.unlock()
+    }
 
     /// "USB HID (XREAL Air 2)" once reports arrive, else nil.
     var connectedVia: String? { lock.lock(); defer { lock.unlock() }; return _connectedVia }
@@ -152,6 +166,11 @@ final class HidImuReader: @unchecked Sendable {
             spin(0.2)
             let found: [HidCandidate] = candidates(manager)
             logCandidates(found)
+            if glasses.family == .air, found.contains(where: { $0.interface != nil }) {
+                let streamed = tryAir(found)
+                wait(streamed ? 1.0 : (AirImuProtocol.isXbx(glasses.product) ? 10.0 : 3.0))
+                continue
+            }
             let order: [HidCandidate] = ordered(found)
             if order.isEmpty {
                 if found.isEmpty {
@@ -173,6 +192,7 @@ final class HidImuReader: @unchecked Sendable {
             }
             wait(streamed ? 1.0 : 3.0)
         }
+        stopMcu()
         IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         plog("hid imu: stopped")
     }
@@ -302,11 +322,141 @@ final class HidImuReader: @unchecked Sendable {
         return result
     }
 
+    // MARK: the Air family: which interface streams
+
+    /// The interface being read, for the log.
+    private var currentInterface: Int?
+    /// Raw reports logged per interface this try (the first few, in hex).
+    private var loggedPerInterface: [Int: Int] = [:]
+    private static let loggedReports = 12
+
+    private func noteBytes(_ interface: Int?, _ bytes: [UInt8], _ what: String) {
+        let key = interface ?? -1
+        let n = loggedPerInterface[key, default: 0]
+        guard n < Self.loggedReports else { return }
+        loggedPerInterface[key] = n + 1
+        plog("hid imu: interface \(interface.map(String.init) ?? "?") \(what) \(AirImuProtocol.hexStart(bytes))")
+    }
+
+    /// The Air family's steps (AirImuProtocol.tryOrder): the IMU interface; on the XBX, if it stays silent, the MCU
+    /// heartbeat and the IMU interface again, then the other interfaces. True if one streamed (until its stream ended).
+    private func tryAir(_ found: [HidCandidate]) -> Bool {
+        var byNum = [Int: HidCandidate]()
+        for c in found { if let n = c.interface, byNum[n] == nil { byNum[n] = c } }
+        loggedPerInterface = [:]
+        let steps = AirImuProtocol.tryOrder(product: glasses.product, interfaces: Set(byNum.keys))
+        if steps.isEmpty {
+            let have = byNum.keys.sorted().map(String.init).joined(separator: ", ")
+            setStatus("interface \(AirImuProtocol.imuInterface(glasses.product)) is not among the glasses' HID devices (macOS lists interfaces \(have))")
+            return false
+        }
+        plog("hid imu: trying, in order: \(steps.map { "\($0)" }.joined(separator: ", "))")
+        defer { stopMcu() }
+        for step in steps {
+            if isStopped { return false }
+            switch step {
+            case .wakeMcu:
+                if let c = byNum[AirImuProtocol.xbxMcuInterface] { _ = startMcu(c) }
+            case .imuWithMcu(let n):
+                guard mcu != nil, let c = byNum[n] else { continue }
+                if session(c) { return true }
+            case .imu(let n):
+                guard let c = byNum[n] else { continue }
+                if session(c) { return true }
+            }
+        }
+        if !isStopped {
+            setStatus("no interface sent motion reports (tried \(steps.map { "\($0)" }.joined(separator: ", ")))\(AirImuProtocol.isXbx(glasses.product) ? "; trying again in 10 s" : ""); Input Monitoring \(Self.inputMonitoring())")
+        }
+        return false
+    }
+
+    // MARK: the XBX's MCU heartbeat (interface 0)
+
+    private final class Mcu {
+        let device: IOHIDDevice
+        let buffer: UnsafeMutablePointer<UInt8>
+        let size: Int
+        var timer: CFRunLoopTimer?
+        var answered = false
+        init(device: IOHIDDevice, size: Int) {
+            self.device = device
+            self.size = size
+            buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: size)
+            buffer.initialize(repeating: 0, count: size)
+        }
+    }
+
+    private var mcu: Mcu?
+
+    /// Opens the MCU's interface, sends the handshake (each command waits up to 2 s for any 0xFD frame back, as the
+    /// library does) and starts the heartbeat every 100 ms on this thread's run loop. False if it did not take.
+    private func startMcu(_ c: HidCandidate) -> Bool {
+        stopMcu()
+        let device = c.device
+        let opened = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        if opened != kIOReturnSuccess {
+            plog("hid imu: MCU interface \(c.interface ?? -1) not open: \(Self.words(opened))")
+            return false
+        }
+        let m = Mcu(device: device, size: max(64, c.maxInput))
+        mcu = m
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        IOHIDDeviceRegisterInputReportCallback(device, m.buffer, CFIndex(m.size), { context, _, _, _, _, report, length in
+            guard let context = context, length > 0 else { return }
+            let reader = Unmanaged<HidImuReader>.fromOpaque(context).takeUnretainedValue()
+            let bytes = Array(UnsafeBufferPointer<UInt8>(start: UnsafePointer<UInt8>(report), count: Int(length)))
+            reader.noteBytes(AirImuProtocol.xbxMcuInterface, bytes, "read")
+            if bytes.first == AirImuProtocol.mcuHead { reader.mcu?.answered = true }
+        }, context)
+        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        spin(0.2)
+        for step in AirImuProtocol.mcuBootstrap {
+            let ok = mcuAsk(m, AirImuProtocol.mcuCommand(step.id, step.data))
+            plog(String(format: "hid imu: MCU command 0x%02x on interface %d: %@", step.id, AirImuProtocol.xbxMcuInterface, ok ? "answered" : "no answer"))
+            if !ok {
+                setStatus(String(format: "the XBX's controller (interface 0) did not answer command 0x%02x", step.id))
+                stopMcu()
+                return false
+            }
+        }
+        for _ in 0..<2 { _ = mcuAsk(m, AirImuProtocol.mcuHeartbeat(nowNs: DispatchTime.now().uptimeNanoseconds)) }
+        let timer = CFRunLoopTimerCreateWithHandler(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + 0.1, 0.1, 0, 0) { [weak self] _ in
+            guard let self, let m = self.mcu else { return }
+            _ = self.send(m.device, AirImuProtocol.mcuHeartbeat(nowNs: DispatchTime.now().uptimeNanoseconds), what: "heartbeat", quiet: true)
+        }
+        CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, .defaultMode)
+        m.timer = timer
+        plog("hid imu: MCU heartbeat running on interface \(AirImuProtocol.xbxMcuInterface)")
+        return true
+    }
+
+    private func mcuAsk(_ m: Mcu, _ frame: [UInt8]) -> Bool {
+        m.answered = false
+        guard send(m.device, frame, what: "MCU command") else { return false }
+        let end = Date().addingTimeInterval(2)
+        while !m.answered && Date() < end && !isStopped { spin(0.05) }
+        return m.answered
+    }
+
+    private func stopMcu() {
+        guard let m = mcu else { return }
+        mcu = nil
+        if let t = m.timer { CFRunLoopTimerInvalidate(t) }
+        IOHIDDeviceRegisterInputReportCallback(m.device, m.buffer, CFIndex(m.size), nil, nil)
+        IOHIDDeviceUnscheduleFromRunLoop(m.device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceClose(m.device, IOOptionBits(kIOHIDOptionsTypeNone))
+        m.buffer.deinitialize(count: m.size)
+        m.buffer.deallocate()
+        plog("hid imu: MCU heartbeat stopped")
+    }
+
     // MARK: one open device
 
     /// Opens [c], starts its stream and reads until the stream ends or stop(). True if samples came.
     private func session(_ c: HidCandidate) -> Bool {
         let device: IOHIDDevice = c.device
+        currentInterface = c.interface
         let opened: IOReturn = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
         if opened != kIOReturnSuccess {
             plog("hid imu: could not open \(c.line): \(Self.words(opened))")
@@ -370,11 +520,13 @@ final class HidImuReader: @unchecked Sendable {
         var announced = false
         while !isStopped && !removed {
             spin(0.25)
+            publish()
             if sessionSamples > 0 && !announced {
                 announced = true
                 let model: String = glasses.family == .air ? (AirImuProtocol.modelName(glasses.product) ?? glasses.name) : glasses.name
                 setConnected("USB HID (\(model))")
-                setStatus("reports arriving from \(c.interface.map { "interface \($0)" } ?? "the device")")
+                setStatus("reports arriving from \(c.interface.map { "interface \($0)" } ?? "the device")\(mcu != nil ? ", with the MCU heartbeat" : "")")
+                plog("hid imu: Air samples on \(c.interface.map { "interface \($0)" } ?? "the device")\(mcu != nil ? ", with the MCU heartbeat" : "")")
                 plog("hid imu: samples arriving from \(c.line)")
             }
             let quietFor: Double = Date().timeIntervalSince(sessionSamples > 0 ? lastSampleAt : askedAt)
@@ -413,7 +565,7 @@ final class HidImuReader: @unchecked Sendable {
     /// Writes one 64 byte output report. The Air's command goes with its first byte (0xAA) as the report id, as hidapi
     /// sends it on macOS (nrealAirLinuxDriver, which works there): the IMU interface numbers its reports (its own
     /// start 0x01), and a SET_REPORT naming id 0 may be ignored. If macOS refuses that, report id 0. VITURE: id 0.
-    private func send(_ device: IOHIDDevice, _ bytes: [UInt8], what: String) -> Bool {
+    private func send(_ device: IOHIDDevice, _ bytes: [UInt8], what: String, quiet: Bool = false) -> Bool {
         func write(_ id: Int) -> IOReturn {
             bytes.withUnsafeBufferPointer { (p: UnsafeBufferPointer<UInt8>) -> IOReturn in
                 guard let base = p.baseAddress else { return kIOReturnSuccess }
@@ -425,11 +577,16 @@ final class HidImuReader: @unchecked Sendable {
         for id in ids {
             result = write(id)
             if result == kIOReturnSuccess {
-                if id != lastReportId || what == "start" { plog("hid imu: the \(what) command written (report id \(id))") }
+                if !quiet && (id != lastReportId || what == "start") { plog("hid imu: the \(what) written (report id \(id))") }
                 lastReportId = id
                 return true
             }
-            plog("hid imu: the \(what) command with report id \(id) was not written: \(Self.words(result))")
+            if !quiet { plog("hid imu: the \(what) with report id \(id) was not written: \(Self.words(result))") }
+        }
+        // The MCU's frames are shorter than a report: padded to 64 if macOS wants a whole one.
+        if bytes.count < AirImuProtocol.packetBytes {
+            let padded = bytes + [UInt8](repeating: 0, count: AirImuProtocol.packetBytes - bytes.count)
+            if send(device, padded, what: what + " (padded)", quiet: quiet) { return true }
         }
         lastSendError = Self.words(result)
         return false
@@ -437,6 +594,7 @@ final class HidImuReader: @unchecked Sendable {
 
     /// One input report, on the reader's thread.
     private func received(_ bytes: [UInt8]) {
+        noteBytes(currentInterface, bytes, draining ? "drained" : "read")
         if draining { return }
         if glasses.family == .air {
             guard var s = AirImuProtocol.parse(bytes) else {
