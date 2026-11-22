@@ -2,6 +2,17 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## 0.5.5
+
+Details: [docs/release-notes-0.5.5.md](docs/release-notes-0.5.5.md).
+
+- **Smooth Follow shows a whole screen.** With two screens side by side, Smooth Follow kept the middle of the row in
+  front, which is the gap between them, so only half of each screen could be seen, and as the screens follow the head
+  neither could be turned to (an XREAL Air, 22 Nov 2026). Now, with Head scroll off, Smooth Follow settles on the middle
+  of the screen nearest where you look. Moving the pointer onto another screen brings that one in front, and so does a
+  quick turn of the head past halfway to it. With one or three screens the middle screen is in front, as before.
+  Body Anchor and Head scroll are unchanged. Not yet tried with glasses.
+
 ## 0.5.4
 
 Details: [docs/release-notes-0.5.4.md](docs/release-notes-0.5.4.md).

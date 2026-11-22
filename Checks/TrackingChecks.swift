@@ -445,6 +445,56 @@ private func trackingChainFollowChecks() {
     check(near(rig.pose.yawPitchDeg.yaw, 0, 0.5), "Smooth Follow converges on the head (\(rig.pose.yawPitchDeg.yaw) deg left)")
     check(rig.pose.scrollYawDeg == 0, "Head scroll off shifts nothing")
 
+    // Two screens side by side, their middles 20.5 degrees either side: Smooth Follow brings a whole screen in front,
+    // not the gap between them (a tester's Air, 22 Nov 2026), and a turn past halfway moves it to the other.
+    check(FollowStops.pick(lookYawDeg: 0, current: nil, stopsDeg: [20.5, -20.5], hysteresisDeg: 7) == 0, "looking at the gap: the first screen")
+    check(FollowStops.pick(lookYawDeg: -3, current: nil, stopsDeg: [20.5, -20.5], hysteresisDeg: 7) == 1, "a little right: the right screen")
+    check(FollowStops.pick(lookYawDeg: -3, current: 0, stopsDeg: [20.5, -20.5], hysteresisDeg: 7) == 0, "just past halfway the screen is kept")
+    check(FollowStops.pick(lookYawDeg: -10, current: 0, stopsDeg: [20.5, -20.5], hysteresisDeg: 7) == 1, "well past halfway it moves")
+    check(FollowStops.pick(lookYawDeg: 5, current: nil, stopsDeg: [], hysteresisDeg: 0) == nil, "no screens: nothing to settle on")
+    check(FollowStops.pick(lookYawDeg: 30, current: 2, stopsDeg: [41, 0, -41], hysteresisDeg: 6.8) == 0, "three screens: the nearest")
+    check(near(FollowStops.hysteresisDeg([20.5, -20.5]), 41.0 / 6, 1e-9) && FollowStops.hysteresisDeg([0]) == 0
+          && FollowStops.hysteresisDeg([0, 0]) == 0, "the margin is a sixth of the spacing, none with one screen")
+
+    let pair = TrackingRig()
+    pair.options.mode = .smoothFollow
+    pair.pose.setFollowStops([20.5, -20.5])
+    pair.run(4.0)
+    check(near(pair.pose.yawPitchDeg.yaw, 20.5, 0.5), "Smooth Follow with two screens settles on a whole screen, not the gap (\(pair.pose.yawPitchDeg.yaw))")
+    check(pair.pose.followStop == 0, "the first screen")
+    pair.run(0.5, gyro: SIMD3<Double>(0, -82 * trackingRad, 0)) // 41 degrees to the right, onto the other screen
+    pair.run(4.0)
+    check(pair.pose.followStop == 1, "turning onto the other screen moves Smooth Follow to it")
+    check(near(pair.pose.yawPitchDeg.yaw, -20.5, 0.5), "and it settles on that screen's middle (\(pair.pose.yawPitchDeg.yaw))")
+    pair.run(0.5, gyro: SIMD3<Double>(0, 20 * trackingRad, 0)) // a glance 10 degrees back to the left
+    pair.run(4.0)
+    check(pair.pose.followStop == 1 && near(pair.pose.yawPitchDeg.yaw, -20.5, 0.5), "a small glance back keeps the screen (\(pair.pose.yawPitchDeg.yaw))")
+
+    // The pointer going onto the other screen brings that one in front, and it stays.
+    pair.pose.setFollowFocus(0)
+    pair.run(4.0)
+    check(pair.pose.followStop == 0 && near(pair.pose.yawPitchDeg.yaw, 20.5, 0.5), "the pointer on the first screen brings it in front (\(pair.pose.yawPitchDeg.yaw))")
+    pair.pose.setFollowFocus(1)
+    pair.run(4.0)
+    check(pair.pose.followStop == 1 && near(pair.pose.yawPitchDeg.yaw, -20.5, 0.5), "and on the second screen, that one (\(pair.pose.yawPitchDeg.yaw))")
+    pair.pose.setFollowFocus(7)
+    pair.run(1.0)
+    check(pair.pose.followStop == 1, "a screen that is not there is ignored")
+
+    // With Head scroll on, the row slides instead: no screen to settle on, the view as it was.
+    let slide = TrackingRig()
+    slide.options.mode = .smoothFollow
+    slide.options.headScroll = true
+    slide.pose.setFollowStops([20.5, -20.5])
+    slide.run(4.0)
+    check(near(slide.pose.yawPitchDeg.yaw, 0, 0.5) && slide.pose.followStop == nil, "Head scroll on: Smooth Follow keeps the view as it was")
+
+    // Body Anchor is not changed by the stops.
+    let anchored = TrackingRig()
+    anchored.pose.setFollowStops([20.5, -20.5])
+    anchored.run(4.0)
+    check(near(anchored.pose.yawPitchDeg.yaw, 0, 0.5) && anchored.pose.followStop == nil, "Body Anchor ignores the screens' middles")
+
     // Body Anchor leaves the screens where they are in the room.
     let room = TrackingRig()
     room.run(2.5)

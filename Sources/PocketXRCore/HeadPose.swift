@@ -23,14 +23,50 @@ public struct TrackingOptions: Equatable, Sendable {
     }
 }
 
+/// Which screen Smooth Follow brings in front: the one whose middle is nearest where the head looks, kept until the
+/// look is clearly nearer another (a tester's Air, 22 Nov 2026: with two screens Smooth Follow held the gap between
+/// them in front, so only half of each could be seen, and the screens followed the head so neither could be turned to).
+public enum FollowStops {
+    /// Of the screens' middles [stopsDeg] (yaw, left positive), the one to bring in front for a look at [lookYawDeg].
+    /// [current] is kept unless another is nearer by more than [hysteresisDeg]. nil when there are no screens.
+    public static func pick(lookYawDeg: Double, current: Int?, stopsDeg: [Double], hysteresisDeg: Double) -> Int? {
+        guard !stopsDeg.isEmpty else { return nil }
+        var nearest = 0
+        for i in stopsDeg.indices where abs(lookYawDeg - stopsDeg[i]) < abs(lookYawDeg - stopsDeg[nearest]) { nearest = i }
+        if let c = current, c < stopsDeg.count, c != nearest,
+           abs(lookYawDeg - stopsDeg[nearest]) + hysteresisDeg >= abs(lookYawDeg - stopsDeg[c]) {
+            return c
+        }
+        return nearest
+    }
+
+    /// How much nearer another screen must be before Smooth Follow moves to it: a sixth of the closest two screens'
+    /// spacing, so a look just past halfway does not flip back and forth. 0 with one screen.
+    public static func hysteresisDeg(_ stopsDeg: [Double]) -> Double {
+        let sorted = stopsDeg.sorted()
+        var gap = Double.infinity
+        for i in sorted.indices.dropFirst() where sorted[i] - sorted[i - 1] > 0.01 { gap = min(gap, sorted[i] - sorted[i - 1]) }
+        return gap.isFinite ? gap / 6 : 0
+    }
+}
+
 /// Smooth Follow's anchor, ported from Pocket XR's FollowView (0.5.17, 0.5.38): the anchor eases towards the head's
 /// turn since Smooth Follow went on, and the screens are drawn with the head relative to it, so they drift back in
-/// front. Starting from the head's pose at the switch keeps the view as it was at that moment.
+/// front. Starting from the head's pose at the switch keeps the view as it was at that moment. With the screens'
+/// middles in [stopsDeg], the view settles on the middle of a whole screen instead ([FollowStops]). Turning the head
+/// quickly past halfway to the next screen moves it there, and so does the pointer going onto another screen ([focus]).
 struct FollowAnchor {
     /// Pocket XR's FollowView.FOLLOW_RATE: a 0.5 s time constant, chosen by feel.
     static let followRate: Double = 2
 
     var rate: Double = FollowAnchor.followRate
+    /// The screens' middles (yaw, degrees, left positive) the view settles on. Empty: the view as it was at the start.
+    var stopsDeg: [Double] = [] {
+        didSet { if stopsDeg != oldValue { stop = nil; settling = false } }
+    }
+    private(set) var stop: Int?
+    /// Moving to a screen the pointer went to: the look is not used to choose until the view has come to it.
+    private var settling = false
     private var anchor: Quat = Quat.identity
     private var start: Quat?
 
@@ -39,6 +75,8 @@ struct FollowAnchor {
         guard on else {
             anchor = Quat.identity
             start = nil
+            stop = nil
+            settling = false
             return
         }
         var from: Quat = q
@@ -48,8 +86,29 @@ struct FollowAnchor {
             start = q
             anchor = Quat.identity
         }
-        let goal: Quat = (q * from.conjugate).normalized
+        // The pose the view settles on: the start, turned so its heading is the chosen screen's middle.
+        var settle: Quat = from
+        let look: Double = HeadMath.yawPitchDeg(relative(q, on: true)).yaw
+        let margin: Double = FollowStops.hysteresisDeg(stopsDeg)
+        if settling, let i = stop, i < stopsDeg.count {
+            if abs(look - stopsDeg[i]) < max(margin, 1) { settling = false }
+        } else {
+            settling = false
+            stop = FollowStops.pick(lookYawDeg: look, current: stop, stopsDeg: stopsDeg, hysteresisDeg: margin)
+        }
+        if let i = stop {
+            let turn: Double = (stopsDeg[i] - HeadMath.yawPitchDeg(from).yaw) * .pi / 180
+            settle = (Quat.aboutY(turn) * from).normalized
+        }
+        let goal: Quat = (q * settle.conjugate).normalized
         anchor = HeadMath.slerp(anchor, goal, 1 - exp(-dt * rate))
+    }
+
+    /// Brings screen [index] in front (the pointer went onto it). Ignored when it is not one of the stops.
+    mutating func focus(_ index: Int) {
+        guard index >= 0, index < stopsDeg.count, index != stop else { return }
+        stop = index
+        settling = true
     }
 
     /// The pose to draw for the tracked pose [q].
@@ -60,6 +119,8 @@ struct FollowAnchor {
     /// Smooth Follow starts again from the next pose (a recentre).
     mutating func restart() {
         start = nil
+        stop = nil
+        settling = false
         anchor = Quat.identity
     }
 }
@@ -96,6 +157,8 @@ public final class HeadPose: @unchecked Sendable {
     private var scrollYaw: Double = 0
     private var scrollLow: Double = -45
     private var scrollHigh: Double = 45
+    private var followStops: [Double] = []
+    private var followFocus: Int?
     private var samples: Int = 0
     private var rateMarkTime: Double?
     private var rateMarkSamples: Int = 0
@@ -171,6 +234,12 @@ public final class HeadPose: @unchecked Sendable {
 
         let following: Bool = options.mode == .smoothFollow
         follow.rate = options.headScroll ? HeadScroll.followRate : FollowAnchor.followRate
+        // Head scroll slides the row itself, so it needs no screen to settle on.
+        follow.stopsDeg = options.headScroll ? [] : followStops
+        if let f = followFocus {
+            followFocus = nil
+            if following { follow.focus(f) }
+        }
         follow.update(steady, on: following, dt: frameDt)
         let shown: Quat = follow.relative(steady, on: following)
 
@@ -229,6 +298,25 @@ public final class HeadPose: @unchecked Sendable {
         scrollLow = min(lowDeg, highDeg)
         scrollHigh = max(lowDeg, highDeg)
         scrollYaw = HeadMath.clamp(scrollYaw, scrollLow, scrollHigh)
+    }
+
+    /// The screens' middles (yaw, degrees, left positive) Smooth Follow settles on when Head scroll is off, so a whole
+    /// screen is in front rather than the gap between two. Empty until set: the view stays as it was at the start.
+    public func setFollowStops(_ yawsDeg: [Double]) {
+        lock.lock(); defer { lock.unlock() }
+        followStops = yawsDeg.filter(\.isFinite)
+    }
+
+    /// The pointer went onto screen [index]: Smooth Follow brings that screen in front (when Head scroll is off).
+    public func setFollowFocus(_ index: Int) {
+        lock.lock(); defer { lock.unlock() }
+        followFocus = index
+    }
+
+    /// Which of the follow stops Smooth Follow is settling on now, nil when none (for the checks and the log).
+    public var followStop: Int? {
+        lock.lock(); defer { lock.unlock() }
+        return follow.stop
     }
 
     /// Recentres: the head's heading becomes forward, the view turned `yawDeg` left so the middle of the screens is

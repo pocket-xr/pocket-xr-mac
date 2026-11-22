@@ -315,6 +315,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         fusion = f
         headPose = HeadPose(fusion: f)
         if let a = placements.first?.yawDeg, let b = placements.last?.yawDeg { headPose?.setScrollRange(lowDeg: a, highDeg: b) }
+        headPose?.setFollowStops(placements.map(\.yawDeg))
         if useHid {
             let r = HidImuReader(glasses: g) { f.report($0) }
             r.start()
@@ -469,6 +470,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
         // Head scroll slides the row no further than its first and last screens.
         if let a = placements.first?.yawDeg, let b = placements.last?.yawDeg { headPose?.setScrollRange(lowDeg: a, highDeg: b) }
+        headPose?.setFollowStops(placements.map(\.yawDeg))
         var o = RenderOptions()
         o.fovYDeg = fov
         o.ipd = s.ipdMm / 1000
@@ -596,6 +598,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if on != pointerScreen {
             pointerScreen = on
             renderOptions.focused = on
+            // Smooth Follow brings the screen the pointer went onto in front.
+            if let on { headPose?.setFollowFocus(on) }
         }
         if on != nil, !state.pointerVisitedScreen { state.pointerVisitedScreen = true }
         guard store.s.pointerFollowsHead, !state.steady, let pose = headPose, let on else {
