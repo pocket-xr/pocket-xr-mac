@@ -122,11 +122,19 @@ public struct Glasses: Equatable, Sendable {
         return nil
     }
 
-    /// The glasses' display among the Mac's screens, by name ("XREAL AURA", "XREAL One", "VITURE ..."), else nil.
+    /// The glasses' display among the Mac's screens, by name ("XREAL AURA", "XREAL One", "VITURE ...", "xbx a01+").
+    /// "XBX" was added from a tester's XBX A01+ on Windows (November 2026), whose display was named "xbx a01+".
     public static func isGlassesScreenName(_ name: String) -> Bool {
         let n = name.uppercased()
         return n.contains("XREAL") || n.contains("NREAL") || n.contains("VITURE") || n.contains("ROKID")
-            || n.contains("RAYNEO")
+            || n.contains("RAYNEO") || n.contains("XBX")
+    }
+
+    /// Whether a screen's name is the plugged-in glasses' USB product name, ignoring case and spaces at the ends, so
+    /// a model whose maker's name Pocket XR does not know is still found. An empty USB name matches nothing.
+    public static func isUsbNameScreen(_ name: String, usbName: String) -> Bool {
+        let u = usbName.trimmingCharacters(in: .whitespaces)
+        return !u.isEmpty && name.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(u) == .orderedSame
     }
 
     /// The names macOS gives an Air-family pair's display without the maker's name. The first XREAL Air shows as just
@@ -137,11 +145,18 @@ public struct Glasses: Equatable, Sendable {
         return ["AIR", "AIR 2", "AIR 2 PRO", "AIR 2 ULTRA"].contains(n)
     }
 
-    /// Whether a screen is the glasses' display: a maker's name ([isGlassesScreenName]), or an Air-family name
-    /// ([isAirScreenName]) while Air-family glasses are on USB, so a monitor that happens to be called "Air" is not
-    /// taken for them otherwise. Never the Mac's built-in screen, and never one of Pocket XR's own floating screens.
-    public static func isGlassesScreen(name: String, builtIn: Bool, airOnUsb: Bool) -> Bool {
+    /// Whether a screen is the glasses' display: a maker's name ([isGlassesScreenName]), the plugged-in glasses' USB
+    /// product name ([isUsbNameScreen]), or an Air-family name ([isAirScreenName]) while Air-family glasses are on USB,
+    /// so a monitor that happens to be called "Air" is not taken for them otherwise. Never the Mac's built-in screen,
+    /// and never one of Pocket XR's own floating screens.
+    public static func isGlassesScreen(name: String, builtIn: Bool, airOnUsb: Bool, usbName: String = "") -> Bool {
         if builtIn || name.hasPrefix("Pocket XR") { return false }
-        return isGlassesScreenName(name) || (airOnUsb && isAirScreenName(name))
+        return isGlassesScreenName(name) || isUsbNameScreen(name, usbName: usbName) || (airOnUsb && isAirScreenName(name))
+    }
+
+    /// The USB product name of the device [glasses] was found from, among [devices]; "" when there is none.
+    public static func usbName(of glasses: Glasses?, in devices: [UsbDeviceInfo]) -> String {
+        guard let g = glasses else { return "" }
+        return devices.first { $0.vendor == g.vendor && $0.product == g.product }?.name ?? ""
     }
 }

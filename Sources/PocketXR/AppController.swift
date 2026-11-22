@@ -176,6 +176,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             glassesChanged(to: found)
         }
         NSScreen.airOnUsb = found?.family == .air
+        NSScreen.glassesUsbName = Glasses.usbName(of: found, in: usb)
         if NSScreen.glasses == nil, !NSScreen.airOnUsb,
            NSScreen.screens.contains(where: { Glasses.isAirScreenName($0.localizedName) }) {
             // A screen named "Air" with no Air on USB: the display can come a moment before the USB devices are listed,
