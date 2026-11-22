@@ -2,7 +2,9 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
-## Unreleased
+## 0.5.5
+
+Details: [docs/release-notes-0.5.5.md](docs/release-notes-0.5.5.md).
 
 - **Smooth Follow shows a whole screen.** With two screens side by side, Smooth Follow kept the middle of the row in
   front, which is the gap between them, so only half of each screen could be seen, and as the screens follow the head
