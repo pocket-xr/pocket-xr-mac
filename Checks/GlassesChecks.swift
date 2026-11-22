@@ -375,6 +375,26 @@ private func screenNameChecks() {
         check(!Glasses.isGlassesScreen(name: name, builtIn: false, airOnUsb: true), "\"\(name)\" is not the glasses")
     }
     check(Glasses.isGlassesScreen(name: "XREAL Air 2 Pro", builtIn: false, airOnUsb: false), "\"XREAL Air 2 Pro\" needs no Air on USB")
+    // The XBX A01+ (USB 3318:0442, product "xbx a01+") gave a display named "xbx a01+" on Windows (November 2026).
+    check(Glasses.isGlassesScreen(name: "xbx a01+", builtIn: false, airOnUsb: false), "\"xbx a01+\" is the glasses")
+    check(Glasses.isGlassesScreen(name: "XBX A01", builtIn: false, airOnUsb: true), "\"XBX A01\" is the glasses")
+    check(!Glasses.isGlassesScreen(name: "Xbox Wireless Display", builtIn: false, airOnUsb: false), "an Xbox name is not the glasses")
+    // A screen with the plugged-in glasses' USB product name is theirs, whatever the maker's name.
+    check(Glasses.isGlassesScreen(name: "Future Glasses X1", builtIn: false, airOnUsb: false, usbName: "future glasses x1"),
+          "the USB product name, any case, is the glasses")
+    check(Glasses.isGlassesScreen(name: " Future Glasses X1 ", builtIn: false, airOnUsb: false, usbName: "Future Glasses X1"),
+          "spaces at the ends do not matter")
+    check(!Glasses.isGlassesScreen(name: "Future Glasses X1", builtIn: false, airOnUsb: false), "with no USB name it is another monitor")
+    check(!Glasses.isGlassesScreen(name: "DELL U2720Q", builtIn: false, airOnUsb: false, usbName: "Future Glasses X1"),
+          "another name is another monitor")
+    check(!Glasses.isGlassesScreen(name: "", builtIn: false, airOnUsb: false, usbName: ""), "an empty USB name matches nothing")
+    check(!Glasses.isGlassesScreen(name: "Future Glasses X1", builtIn: true, airOnUsb: false, usbName: "Future Glasses X1"),
+          "the built-in screen is never the glasses, even by USB name")
+    // The USB name comes from the device the glasses were found from.
+    let usb = [UsbDeviceInfo(vendor: 0x05AC, product: 0x1234, name: "Keyboard"),
+               UsbDeviceInfo(vendor: 0x3318, product: 0x0442, interfaceClasses: [0x03], name: "xbx a01+")]
+    check(Glasses.usbName(of: Glasses.detect(usb), in: usb) == "xbx a01+", "the XBX A01+'s USB name is \"xbx a01+\"")
+    check(Glasses.usbName(of: nil, in: usb) == "", "no glasses, no USB name")
 }
 
 private func reportChecks() {

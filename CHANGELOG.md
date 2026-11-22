@@ -2,6 +2,15 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## 0.5.6
+
+Details: [docs/release-notes-0.5.6.md](docs/release-notes-0.5.6.md).
+
+- **XBX glasses' display is found.** Pocket XR found the glasses' display only by a maker's name in it (XREAL, NREAL,
+  VITURE, ROKID or RAYNEO). The XBX A01+ names its display "xbx a01+" (seen on Windows, November 2026), so it was never
+  found. Now a name with "XBX" counts, and so does a screen whose name is the plugged-in glasses' USB product name,
+  ignoring case. Not tried with XBX glasses on a Mac.
+
 ## 0.5.5
 
 Details: [docs/release-notes-0.5.5.md](docs/release-notes-0.5.5.md).

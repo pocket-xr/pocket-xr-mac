@@ -107,17 +107,21 @@ extension NSScreen {
     /// While they are, a screen named just "Air" is theirs: macOS gives the first XREAL Air's display no maker's name.
     static var airOnUsb = false
 
+    /// The plugged-in glasses' USB product name at the last look ("" with none): a screen of that name is theirs.
+    static var glassesUsbName = ""
+
     /// Whether this screen is the glasses' display (see Glasses.isGlassesScreen): never the built-in screen, never one
     /// of Pocket XR's own floating screens.
     var isGlassesScreen: Bool {
         Glasses.isGlassesScreen(name: localizedName, builtIn: displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false,
-                                airOnUsb: NSScreen.airOnUsb)
+                                airOnUsb: NSScreen.airOnUsb, usbName: NSScreen.glassesUsbName)
     }
 
     /// Whether this is one of Pocket XR's own floating screens (which can only be seen in the glasses).
     var isPocketXRScreen: Bool { localizedName.hasPrefix("Pocket XR") }
 
-    /// The glasses' display: a screen whose name says XREAL, VITURE and the like, or "Air" while an Air is on USB.
+    /// The glasses' display: a screen whose name says XREAL, VITURE, XBX and the like, or is the glasses' USB product
+    /// name, or "Air" while an Air is on USB.
     static var glasses: NSScreen? {
         screens.first { $0.isGlassesScreen }
     }

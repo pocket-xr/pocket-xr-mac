@@ -14,7 +14,7 @@ same rules, no account and no paid tier.
 
 ## Download
 
-1. Download `PocketXR-Mac-0.5.5.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
+1. Download `PocketXR-Mac-0.5.6.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
    open it. Move **Pocket XR** to Applications.
 2. Plug your glasses in and open Pocket XR. It lives in the menu bar, under a pair of glasses.
 3. macOS asks to allow **Screen Recording**: allow it in System Settings, Privacy & Security, Screen Recording, then
@@ -161,7 +161,8 @@ People whose reports led to fixes:
 
 - **BlackSniper7** (Reddit): the XBX A01+ glasses report that led to XBX A01 and A01+ head tracking (0.5.0, 0.5.2).
 - **Pierre Zammit**: testing the Steam Deck version with his XBX A01+ and sending logs, which led to the XBX's controller
-  heartbeat (0.5.2).
+  heartbeat (0.5.2), and logs from Windows that showed the XBX's display name, which led to looking for it by that
+  name (0.5.6).
 - **MiaRabbitFan** (Reddit): the XREAL Air glasses report (0 reports a second) that led to the Air's start command
   fix and the clearer head tracking line in the Glasses report (0.5.0).
 - **Dmitriy**: logs from his XREAL Air on a MacBook Air, which showed Pocket XR never found the Air's display, named
