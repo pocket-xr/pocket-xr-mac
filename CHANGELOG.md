@@ -2,7 +2,9 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
-## Unreleased
+## 0.5.9
+
+Details: [docs/release-notes-0.5.9.md](docs/release-notes-0.5.9.md).
 
 - **3D on glasses that macOS keeps at 1920 x 1080.** When glasses switch to 3D they come back offering a 3840 x 1080
   mode and split whatever arrives into a left and a right half. If macOS kept them at 1920 x 1080, Pocket XR drew one
