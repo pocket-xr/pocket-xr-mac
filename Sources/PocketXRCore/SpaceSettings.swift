@@ -222,6 +222,9 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     public var headScroll = false
     /// The pointer jumps to the screen you look at when it is on another screen.
     public var pointerFollowsHead = false
+    /// Taps on the glasses' frame (GlassesTaps): two recentre, three switch the view. Off by default: not yet tried
+    /// with real taps.
+    public var glassesTaps = false
 
     // Steady mode
     /// Steady mode uses the glasses' Spatial Anchor (6DoF) where they have it.
@@ -352,6 +355,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         displayDelayMs = try c.decodeIfPresent(Double.self, forKey: .displayDelayMs) ?? d.displayDelayMs
         headScroll = try c.decodeIfPresent(Bool.self, forKey: .headScroll) ?? d.headScroll
         pointerFollowsHead = try c.decodeIfPresent(Bool.self, forKey: .pointerFollowsHead) ?? d.pointerFollowsHead
+        glassesTaps = try c.decodeIfPresent(Bool.self, forKey: .glassesTaps) ?? d.glassesTaps
         steadySixDof = try c.decodeIfPresent(Bool.self, forKey: .steadySixDof) ?? d.steadySixDof
         hidTracking = try c.decodeIfPresent(Bool.self, forKey: .hidTracking) ?? d.hidTracking
         shortcuts = try c.decodeIfPresent(Bool.self, forKey: .shortcuts) ?? d.shortcuts

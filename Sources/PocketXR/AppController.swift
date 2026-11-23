@@ -20,6 +20,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private let pcScreens = PcScreens()
     /// This Mac as the PC end of the phone's PC screens (HostServer): on unless turned off in the menu.
     private let host = HostService()
+    private let taps = TapReader()
     private static let hostKey = "host.on"
     private lazy var pocket = PocketMode(state: state, actions: self)
     private lazy var controllerInput = ControllerInput(store: store, state: state, actions: self)
@@ -112,6 +113,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         buildMenu()
         registerShortcuts()
         StayAwake.set(store.s.stayAwakeOnAdapter)
+        taps.onTaps = { [weak self] n in self?.glassesTapped(n) }
+        taps.enabled = store.s.glassesTaps
         if UserDefaults.standard.object(forKey: Self.hostKey) as? Bool ?? true {
             host.start()
             // Moving over from the separate PC helper app: asked once; the menu offers it after that.
@@ -318,12 +321,14 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         headPose = HeadPose(fusion: f)
         if let a = placements.first?.yawDeg, let b = placements.last?.yawDeg { headPose?.setScrollRange(lowDeg: a, highDeg: b) }
         headPose?.setFollowStops(placements.map(\.yawDeg))
+        let tapFeed: TapReader = taps
+        tapFeed.restart()
         if useHid {
-            let r = HidImuReader(glasses: g) { f.report($0) }
+            let r = HidImuReader(glasses: g) { f.report($0); tapFeed.feed($0) }
             r.start()
             hidImu = r
         } else {
-            let r = ImuReader { f.report($0) }
+            let r = ImuReader { f.report($0); tapFeed.feed($0) }
             r.start()
             imu = r
         }
@@ -420,6 +425,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if old.shortcuts != new.shortcuts { registerShortcuts() }
         if old.launchAtLogin != new.launchAtLogin { setLaunchAtLogin(new.launchAtLogin) }
         if old.stayAwakeOnAdapter != new.stayAwakeOnAdapter { StayAwake.set(new.stayAwakeOnAdapter) }
+        if old.glassesTaps != new.glassesTaps {
+            plog("taps on the glasses: \(new.glassesTaps ? "on" : "off")")
+            taps.enabled = new.glassesTaps
+        }
         if old.hidTracking != new.hidTracking, let g = glasses, !g.networkImu {
             plog("head tracking over USB HID: \(new.hidTracking ? "on" : "off")")
             stopTracking()
@@ -696,6 +705,27 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     }
 
     /// Every control that turns Steady mode on or off comes here, and the choice is kept for the next start.
+    /// Taps on the glasses (GlassesTaps): two recentre; three switch the view, the Mac's nearest to the Deck's switch
+    /// between the Space and Steady mode: Steady mode on or off where the glasses have it, else Body Anchor and Smooth
+    /// Follow in turn.
+    private func glassesTapped(_ n: Int) {
+        guard store.s.glassesTaps, headPose != nil else { return }
+        plog("taps on the glasses: \(n), \(GlassesTaps.jobName(n))")
+        if n == 2 {
+            recentre()
+        } else if n == 3 {
+            if state.steadyAvailable && state.linkOpen {
+                setSteady(!state.steady)
+            } else {
+                var s = store.s
+                s.headTracking = true
+                s.trackingMode = s.trackingMode == .bodyAnchor ? .smoothFollow : .bodyAnchor
+                plog("taps on the glasses: tracking mode \(s.trackingMode.rawValue)")
+                store.s = s
+            }
+        }
+    }
+
     func setSteady(_ on: Bool) {
         guard let settings, state.steadyAvailable else { return }
         plog("Steady mode: asked \(on ? "on" : "off")")
