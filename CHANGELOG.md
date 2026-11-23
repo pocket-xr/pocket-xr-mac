@@ -2,6 +2,17 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## Unreleased
+
+- **3D on glasses that macOS keeps at 1920 x 1080.** When glasses switch to 3D they come back offering a 3840 x 1080
+  mode and split whatever arrives into a left and a right half. If macOS kept them at 1920 x 1080, Pocket XR drew one
+  picture across the whole width: each eye got half of it, stretched, and the two ran into each other in the middle
+  (a user's XREAL 1S on an M4 Pro, November 2026). Now, when the glasses say they are in 3D (or, with no settings
+  link, when 3D is on and a 3840 x 1080 mode is offered), Pocket XR switches their display to that mode itself, as
+  Pocket XR on the phone does. If no such mode is offered, 3D is turned off and Settings, Picture says why, instead of
+  a broken picture. The log lists the modes the glasses offer, what they report for 3D, and the size the picture is
+  drawn at. Not yet tried with the 1S or on Apple Silicon; on the Aura with an Intel Mac macOS picked the mode itself.
+
 ## 0.5.8
 
 Details: [docs/release-notes-0.5.8.md](docs/release-notes-0.5.8.md).
