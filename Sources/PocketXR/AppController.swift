@@ -111,6 +111,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         }
         buildMenu()
         registerShortcuts()
+        StayAwake.set(store.s.stayAwakeOnAdapter)
         if UserDefaults.standard.object(forKey: Self.hostKey) as? Bool ?? true {
             host.start()
             // Moving over from the separate PC helper app: asked once; the menu offers it after that.
@@ -418,6 +419,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if old.readability != new.readability { plog(SpaceSettings.readabilityLine(from: old, to: new)) }
         if old.shortcuts != new.shortcuts { registerShortcuts() }
         if old.launchAtLogin != new.launchAtLogin { setLaunchAtLogin(new.launchAtLogin) }
+        if old.stayAwakeOnAdapter != new.stayAwakeOnAdapter { StayAwake.set(new.stayAwakeOnAdapter) }
         if old.hidTracking != new.hidTracking, let g = glasses, !g.networkImu {
             plog("head tracking over USB HID: \(new.hidTracking ? "on" : "off")")
             stopTracking()
@@ -1135,6 +1137,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             wake.isEnabled = false
             phoneMenu.addItem(wake)
         }
+        phoneMenu.addItem(item("Stay awake on the power adapter (the screen may sleep)", #selector(menuStayAwake),
+                               on: s.stayAwakeOnAdapter))
         if HostService.oldHelperRunning {
             phoneMenu.addItem(.separator())
             phoneMenu.addItem(item("Quit the old Pocket XR PC helper (Pocket XR does its job now)…", #selector(menuHostMoveOver)))
@@ -1235,6 +1239,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if host.isOn { host.stop() } else { host.start() }
         UserDefaults.standard.set(host.isOn, forKey: Self.hostKey)
     }
+    @objc private func menuStayAwake() { store.s.stayAwakeOnAdapter.toggle() }
     @objc private func menuHostPermissions() { HostHelper.openPermissions() }
     @objc private func menuHostForget() { host.forgetPhones() }
     @objc private func menuHostMoveOver() { HostService.offerMoveOver() }

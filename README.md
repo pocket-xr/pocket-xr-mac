@@ -40,6 +40,12 @@ the phone woke it, its screen came on, and the picture came about 4 s after the 
 wake. When a stream starts, Pocket XR wakes the Mac fully (the phone's packet alone wakes it with its screens off) and
 keeps it awake until the stream ends. Not tried: a desktop Mac, Ethernet, or a closed lid with an external display.
 
+**Reaching this Mac from away from home** (Tailscale or the like): a wake packet only travels on the local network, and
+a sleeping Mac's Tailscale is asleep too, so the phone cannot wake it from elsewhere. Turn on **Stay awake on the power
+adapter** (Settings, Help, Pocket XR, or the menu under **Show this Mac on your phone**). While the Mac is plugged in, it
+then does not sleep when left idle; its screen still can, and on battery it sleeps as usual. It uses some power. Closing
+a MacBook's lid still sleeps it unless a display is connected. Not yet tried with a phone over Tailscale.
+
 ## How it works
 
 Pocket XR adds 1 to 3 screens to your Mac, to the right of its own screen. Move the pointer off the right edge and
