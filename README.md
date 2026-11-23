@@ -14,7 +14,7 @@ same rules, no account and no paid tier.
 
 ## Download
 
-1. Download `PocketXR-Mac-0.5.6.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
+1. Download `PocketXR-Mac-0.5.7.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
    open it. Move **Pocket XR** to Applications.
 2. Plug your glasses in and open Pocket XR. It lives in the menu bar, under a pair of glasses.
 3. macOS asks to allow **Screen Recording**: allow it in System Settings, Privacy & Security, Screen Recording, then
