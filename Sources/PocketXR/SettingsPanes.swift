@@ -851,6 +851,12 @@ struct SettingsHelpPane: View {
                 isOn: $store.s.launchAtLogin
             )
             SettingsDivider()
+            SettingsToggleRow(
+                "Stay awake on the power adapter",
+                note: "So your phone can reach this Mac from anywhere, over Tailscale or the like, without waking it. While plugged in, this Mac does not sleep when left idle; its screen still can. Uses some power. Closing a MacBook's lid still sleeps it, unless a display is connected. On battery it sleeps as usual.",
+                isOn: $store.s.stayAwakeOnAdapter
+            )
+            SettingsDivider()
             SettingsRow("Version", note: "Free and open source, GPL-3.0.") {
                 Text(state.version)
                     .font(Font.system(size: 14, weight: .regular).monospacedDigit())

@@ -2,6 +2,7 @@ import Foundation
 
 func settingsChecks() {
     readabilityChecks()
+    stayAwakeChecks()
 
     // An older file with only some keys takes the defaults for the rest.
     let old = Data(#"{"screens": 3, "widthDeg": 55}"#.utf8)
@@ -124,4 +125,22 @@ private func readabilityChecks() {
     let line = SpaceSettings.readabilityLine(from: before, to: on)
     check(line.contains("Readability: on") && line.contains("screens 3 -> 1") && line.contains("width 55 -> 34")
           && line.contains("screen moves moved -> none") && line.contains("1920x1080 -> 1440x810"), "the log line: \(line)")
+}
+
+private func stayAwakeChecks() {
+    // Off by default, and off for an older settings file without the key.
+    check(!SpaceSettings().stayAwakeOnAdapter, "stay awake is off by default")
+    let old = try? JSONDecoder().decode(SpaceSettings.self, from: Data(#"{"screens": 2}"#.utf8))
+    check(old?.stayAwakeOnAdapter == false, "an older file leaves stay awake off")
+    var on = SpaceSettings()
+    on.stayAwakeOnAdapter = true
+    let back = try? JSONDecoder().decode(SpaceSettings.self, from: (try? JSONEncoder().encode(on)) ?? Data())
+    check(back?.stayAwakeOnAdapter == true, "stay awake on is saved and read back")
+    // Held only with the setting on and the Mac on its adapter.
+    check(StayAwakeRule.holds(enabled: true, onAdapter: true), "held on the adapter with the setting on")
+    check(!StayAwakeRule.holds(enabled: true, onAdapter: false), "not held on battery")
+    check(!StayAwakeRule.holds(enabled: false, onAdapter: true), "not held with the setting off")
+    check(!StayAwakeRule.holds(enabled: false, onAdapter: false), "not held off and on battery")
+    check(StayAwakeRule.line(holding: false, enabled: true, onAdapter: false).contains("on battery"), "the battery line says so")
+    check(StayAwakeRule.line(holding: false, enabled: false, onAdapter: true).contains("off"), "the off line says so")
 }

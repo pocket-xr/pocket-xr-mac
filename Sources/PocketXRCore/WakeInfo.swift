@@ -47,3 +47,18 @@ public enum WakeInfo {
         }
     }
 }
+
+/// "Stay awake on the power adapter": the rule and the log lines, apart from IOKit so they can be checked.
+public enum StayAwakeRule {
+    /// The name `pmset -g assertions` shows for it.
+    public static let assertionName = "Pocket XR: Stay awake on the power adapter"
+
+    /// The Mac is kept from idle sleep only with the setting on and the Mac on its adapter.
+    public static func holds(enabled: Bool, onAdapter: Bool) -> Bool { enabled && onAdapter }
+
+    public static func line(holding: Bool, enabled: Bool, onAdapter: Bool) -> String {
+        if holding { return "stay awake: this Mac will not sleep when idle while on its adapter (its screen may)" }
+        if !enabled { return "stay awake: off, this Mac may sleep again on its usual timers" }
+        return onAdapter ? "stay awake: released" : "stay awake: on battery, this Mac may sleep again until it is plugged in"
+    }
+}

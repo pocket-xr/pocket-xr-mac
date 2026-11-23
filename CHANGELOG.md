@@ -2,6 +2,15 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## Unreleased
+
+- **Stay awake on the power adapter** (Settings, Help, Pocket XR; also in the menu under **Show this Mac on your
+  phone**), off by default. While this Mac is plugged in, it does not go to sleep when left idle; its screen still can.
+  For reaching it from your phone away from home, over Tailscale or the like: a sleeping Mac's Tailscale sleeps too, and
+  a wake packet only travels on the local network. On battery, or with the setting off, the Mac sleeps as usual. Uses
+  some power. Closing a MacBook's lid still sleeps it unless a display is connected. Not yet tried with a phone over
+  Tailscale.
+
 ## 0.5.6
 
 Details: [docs/release-notes-0.5.6.md](docs/release-notes-0.5.6.md).

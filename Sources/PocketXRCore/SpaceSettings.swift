@@ -232,6 +232,9 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     // The app
     public var shortcuts = true
     public var launchAtLogin = false
+    /// Keep this Mac from idle sleep while it is on its power adapter (the screen may sleep), so a phone can reach it
+    /// over Tailscale and the like with no wake packet. Off by default.
+    public var stayAwakeOnAdapter = false
     public var tourSeen = false
     /// The control panel opens on the Mac's screen when Pocket XR starts.
     public var panelAtStart = true
@@ -353,6 +356,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         hidTracking = try c.decodeIfPresent(Bool.self, forKey: .hidTracking) ?? d.hidTracking
         shortcuts = try c.decodeIfPresent(Bool.self, forKey: .shortcuts) ?? d.shortcuts
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
+        stayAwakeOnAdapter = try c.decodeIfPresent(Bool.self, forKey: .stayAwakeOnAdapter) ?? d.stayAwakeOnAdapter
         tourSeen = try c.decodeIfPresent(Bool.self, forKey: .tourSeen) ?? d.tourSeen
         offsetYawDeg = try c.decodeIfPresent(Double.self, forKey: .offsetYawDeg) ?? d.offsetYawDeg
         offsetPitchDeg = try c.decodeIfPresent(Double.self, forKey: .offsetPitchDeg) ?? d.offsetPitchDeg
