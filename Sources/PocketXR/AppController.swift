@@ -42,6 +42,14 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private var hidImu: HidImuReader?
     // Rates counted on the tick, not per drawn frame (RateMeter), and what the USB HID diagnostic has logged.
     private var framesDrawn = 0
+    /// What the renderer last drew, for the log: the drawable's size and whether it was side by side.
+    private var drawnShape = ""
+    /// The glasses display's modes as last logged, so each list is logged once.
+    private var loggedModes = ""
+    /// The side by side mode last asked for, and when, so a refusal is not asked again and again.
+    private var stereoModeAsked: (mode: String, at: Double)?
+    /// A check that the glasses' 3D picture can be shown, a few seconds after they said 3D (their display re-plugs).
+    private var stereoCannotCheck: DispatchWorkItem?
     private var fusedRate = RateMeter()
     private var hidRate = RateMeter()
     private var frameRate = RateMeter()
@@ -223,6 +231,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         framePeriod = 1.0 / Double(max(screen.maximumFramesPerSecond, 30))
         state.displayText = "\(wide) x \(high), \(screen.maximumFramesPerSecond) Hz"
         state.stereo = GlassesOptics.isSideBySide(width: wide, height: high)
+        matchStereoMode(screen, why: "display changed")
         if let w = window, w.screen == screen, w.frame.size == size { return }
         window?.shut()
         plog("glasses display: \"\(screen.localizedName)\" \(wide)x\(high), \(screen.maximumFramesPerSecond) Hz")
@@ -258,7 +267,12 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
                 Task { @MainActor in
                     guard let self else { return }
                     let wasSteady = self.settingsState.steady
+                    let wasStereo = self.settingsState.stereo
                     self.settingsState = st
+                    if wasStereo != st.stereo {
+                        plog("glasses report: \(st.stereo == 1 ? "3D side by side" : st.stereo == 0 ? "2D" : "2D / 3D not known")")
+                        if let screen = NSScreen.glasses { self.matchStereoMode(screen, why: "the glasses said") }
+                    }
                     self.state.linkOpen = st.link
                     self.state.busy = st.busy
                     self.state.steady = st.steady
@@ -415,6 +429,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         recompute()
         if old.want3D != new.want3D {
             plog("3D side by side: \(new.want3D ? "on" : "off")")
+            if new.want3D { state.stereoNote = nil }
             modeAskedAt = ProcessInfo.processInfo.systemUptime
             settings?.apply()
         }
@@ -533,7 +548,79 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         for (i, p) in shown.enumerated() where i < captures.count {
             panels.append((p, captures[i].texture))
         }
+        let w = drawable.texture.width, h = drawable.texture.height
+        let sbs = !renderOptions.mono && GlassesOptics.isSideBySide(width: w, height: h)
+        let shape = "\(w)x\(h) \(sbs ? "side by side, one picture for each eye" : "one picture for both eyes")"
+        if shape != drawnShape {
+            drawnShape = shape
+            plog("drawing: \(shape) (glasses report \(settingsState.stereo.map { "\($0)" } ?? "nothing") for 3D)")
+        }
         renderer.draw(drawable: drawable, head: head, panels: panels, options: renderOptions)
+    }
+
+    /// Makes the glasses' display mode match their 2D / 3D state (see StereoMode): in 3D the glasses split the picture
+    /// into two halves, so the display must be side by side (3840 x 1080) for the app to draw one for each eye. macOS
+    /// may keep the glasses at 1920 x 1080 when they switch; then this picks their side by side mode, as Pocket XR on
+    /// the phone does. If none is offered, 3D is turned off and the Settings say why, rather than a broken picture.
+    private func matchStereoMode(_ screen: NSScreen, why: String) {
+        guard let id = screen.displayID, !state.steady else { return }
+        let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        let list = (CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode]) ?? []
+        func info(_ m: CGDisplayMode) -> DisplayModeInfo {
+            DisplayModeInfo(width: m.width, height: m.height, pixelWidth: m.pixelWidth, pixelHeight: m.pixelHeight, hz: m.refreshRate)
+        }
+        let modes = list.map(info)
+        let current = CGDisplayCopyDisplayMode(id).map(info)
+        let line = StereoMode.modesLine(modes, current: current)
+        if line != loggedModes {
+            loggedModes = line
+            plog(line)
+        }
+        let need = StereoMode.need(glassesStereo: settingsState.stereo, want3D: store.s.want3D, current: current, modes: modes)
+        switch need {
+        case .fine:
+            stereoCannotCheck?.cancel()
+            stereoCannotCheck = nil
+        case .switchTo(let i):
+            stereoCannotCheck?.cancel()
+            stereoCannotCheck = nil
+            let target = modes[i].text
+            let now = ProcessInfo.processInfo.systemUptime
+            if let asked = stereoModeAsked, asked.mode == target, now - asked.at < 15 { return }
+            stereoModeAsked = (target, now)
+            var config: CGDisplayConfigRef?
+            var r = CGBeginDisplayConfiguration(&config)
+            if r == .success {
+                CGConfigureDisplayWithDisplayMode(config, id, list[i], nil)
+                r = CGCompleteDisplayConfiguration(config, .forSession)
+            }
+            plog("3D: the glasses are side by side (\(why), glasses report \(settingsState.stereo.map { "\($0)" } ?? "nothing")) "
+                + "but the display is \(current?.text ?? "not known"): switching it to \(target): "
+                + (r == .success ? "done" : "refused (\(r.rawValue))"))
+        case .cannot:
+            guard stereoCannotCheck == nil else { return }
+            // The display re-plugs on a 3D switch (about 4 s on the Aura), and its new modes can come late: look again.
+            let item = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.stereoCannotCheck = nil
+                    guard let screen = NSScreen.glasses, let id = screen.displayID, !self.state.steady else { return }
+                    let modes = ((CGDisplayCopyAllDisplayModes(id, options) as? [CGDisplayMode]) ?? []).map(info)
+                    let current = CGDisplayCopyDisplayMode(id).map(info)
+                    guard StereoMode.need(glassesStereo: self.settingsState.stereo, want3D: self.store.s.want3D,
+                                          current: current, modes: modes) == .cannot else {
+                        self.matchStereoMode(screen, why: "looked again")
+                        return
+                    }
+                    plog("3D: the glasses say 3D, but the display is \(current?.text ?? "not known") and no side by side mode is offered "
+                        + "(\(StereoMode.modesLine(modes, current: current))); turning 3D off")
+                    self.state.stereoNote = StereoMode.cannotNote
+                    self.store.s.want3D = false
+                }
+            }
+            stereoCannotCheck = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: item)
+        }
     }
 
     // MARK: the pointer, and what the windows show

@@ -283,6 +283,9 @@ struct SettingsPicturePane: View {
                     SettingsToggle(isOn: $store.s.want3D, label: "3D side by side")
                 }
             }
+            if let note = state.stereoNote {
+                SettingsNote(note, warn: true)
+            }
             SettingsDivider()
             SettingsSliderRow(
                 "Eye distance",

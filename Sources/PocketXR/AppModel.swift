@@ -64,6 +64,8 @@ final class AppState: ObservableObject {
     @Published var displayText: String?
     /// The glasses' picture is 3D side by side now.
     @Published var stereo = false
+    /// Why 3D was turned off by the app (StereoMode.cannotNote), shown under the 3D switch; nil otherwise.
+    @Published var stereoNote: String?
     /// Frames drawn on the glasses a second.
     @Published var fps = 0.0
     /// Head tracking reports are arriving.
