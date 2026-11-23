@@ -4,6 +4,15 @@ Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
 ## Unreleased
 
+- **Text size** (Settings, Space, Screens): Standard, 125% or 150%. Everything on every screen is drawn larger, at the
+  same width as seen, so the side screens of three do not move further out. Each screen gets fewer points (1536 x 864,
+  1280 x 720) and is made HiDPI, so it stays sharp. Takes effect when Pocket XR opens again. For a user's report (the
+  XREAL 1S on an M4 Pro, November 2026): with three screens the text was too small, and bringing them **Nearer** would
+  not help. Nearer only changes how far away the screens look; each keeps its width as seen, so text stays the same
+  size. Making them **Bigger** instead moves the side screens further out, past the edge of the glasses' view, where
+  turning your head (head tracking) brings them in. Not yet tried with glasses.
+- The XREAL 1S on an M4 Pro is the first report of Pocket XR working on an Apple Silicon Mac (README).
+
 - **Taps on the glasses** (Settings, Head tracking), off by default: tap the glasses' frame twice to recentre, three
   times to switch the view. Switching the view is the Mac's nearest to the Steam Deck's switch between the Space and
   Steady mode: Steady mode on or off where the glasses have it (the Aura, the One series), else Body Anchor and Smooth

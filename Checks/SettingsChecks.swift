@@ -3,6 +3,7 @@ import Foundation
 func settingsChecks() {
     readabilityChecks()
     stayAwakeChecks()
+    textSizeChecks()
 
     // An older file with only some keys takes the defaults for the rest.
     let old = Data(#"{"screens": 3, "widthDeg": 55}"#.utf8)
@@ -143,4 +144,58 @@ private func stayAwakeChecks() {
     check(!StayAwakeRule.holds(enabled: false, onAdapter: false), "not held off and on battery")
     check(StayAwakeRule.line(holding: false, enabled: true, onAdapter: false).contains("on battery"), "the battery line says so")
     check(StayAwakeRule.line(holding: false, enabled: false, onAdapter: true).contains("off"), "the off line says so")
+}
+
+/// Text size (a Mac user's 1S on an M4 Pro, November 2026: three screens, text too small, and bringing them Nearer
+/// did not help). Nearer and Further change only the distance: each screen keeps its width as seen, so neither the
+/// text's size nor where the side screens sit changes. Text size makes text larger at the same width as seen.
+func textSizeChecks() {
+    check(SpaceSettings().textScale == 100, "text size is Standard by default")
+    let old = try? JSONDecoder().decode(SpaceSettings.self, from: Data(#"{"screens": 3}"#.utf8))
+    check(old?.textScale == 100, "an older file keeps Standard text")
+    check(SpaceSettings.screenSize(textScale: 100) == (1920, 1080), "Standard is 1920 x 1080")
+    check(SpaceSettings.screenSize(textScale: 125) == (1536, 864), "125% is 1536 x 864")
+    check(SpaceSettings.screenSize(textScale: 150) == (1280, 720), "150% is 1280 x 720")
+    var s = SpaceSettings()
+    check(!s.hiDPI, "Standard text, no Sharper text: not HiDPI")
+    s.textScale = 150
+    check(s.screenSize == (1280, 720) && s.hiDPI, "150% is 1280 x 720, drawn HiDPI")
+    s.setReadability(true)
+    check(s.screenSize == SpaceSettings.readabilityScreenSize && !s.hiDPI, "Readability keeps its own size, not HiDPI")
+    s.setReadability(false)
+    check(s.screenSize == (1280, 720), "Readability off brings the text size back")
+    var odd = SpaceSettings()
+    odd.textScale = 140
+    check(odd.clamped.textScale == 150, "a size not offered goes to the nearest")
+    odd.textScale = 10
+    check(odd.clamped.textScale == 100, "too small a size goes to Standard")
+    var back = SpaceSettings()
+    back.textScale = 125
+    let read = try? JSONDecoder().decode(SpaceSettings.self, from: (try? JSONEncoder().encode(back)) ?? Data())
+    check(read?.textScale == 125, "text size is saved and read back")
+
+    // Pixels a degree: the usual 1920 across 40 degrees is 48, more than the about 42 the glasses show; 150% is 32.
+    check(abs(SpaceSettings.pixelsPerDegree(widthPx: 1920, widthDeg: 40) - 48) < 1e-9, "1920 across 40 degrees is 48 a degree")
+    check(abs(SpaceSettings.pixelsPerDegree(widthPx: 1280, widthDeg: 40) - 32) < 1e-9, "1280 across 40 degrees is 32 a degree")
+
+    // The placement: three across at 40 degrees, the side screens' middles 42 degrees out and their outer edges 62,
+    // at any distance; each faces the head and keeps its width as seen.
+    let aspects = [16.0 / 9, 16.0 / 9, 16.0 / 9]
+    for d in [0.5, 1.4, 3.0] {
+        let row = SpaceLayout.arrange(layout: .row, aspects: aspects, widthDeg: 40, distance: d, curve: 0)
+        check(row.map(\.yawDeg) == [42, 0, -42], "three across: side screens 42 degrees out at \(d) m")
+        check(abs(row[0].yawDeg + row[0].widthDeg / 2 - 62) < 1e-9, "the left screen's outer edge is 62 degrees out at \(d) m")
+        for p in row {
+            let seen = 2 * atan(p.sizeMetres.x / 2 / p.distance) * 180 / .pi
+            check(abs(seen - 40) < 1e-9, "each screen is 40 degrees wide as seen at \(d) m")
+        }
+    }
+    // Text size leaves the placement alone: the same widths, the same places.
+    var big = SpaceSettings()
+    big.screens = 3
+    big.textScale = 150
+    let a = SpaceLayout.arrange(layout: big.layout, aspects: aspects, widthDeg: big.widthDeg, distance: big.distance, curve: big.curve)
+    let b = SpaceLayout.arrange(layout: SpaceSettings().layout, aspects: aspects, widthDeg: SpaceSettings().widthDeg,
+                                distance: SpaceSettings().distance, curve: SpaceSettings().curve)
+    check(a == b, "text size does not move or widen the screens")
 }

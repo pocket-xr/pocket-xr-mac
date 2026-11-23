@@ -52,6 +52,17 @@ struct SettingsSpacePane: View {
                 isOn: $store.s.sharperText
             )
             SettingsDivider()
+            SettingsRow(
+                "Text size",
+                note: "Larger text on every screen, the screens as wide as before, so the side screens do not move further out. "
+                    + "Each screen gets fewer points (125%: 1536 x 864, 150%: 1280 x 720) and is drawn HiDPI, so it stays sharp. "
+                    + "Takes effect when Pocket XR opens again. Readability uses its own size."
+            ) {
+                SettingsSegmented(selection: $store.s.textScale, values: SpaceSettings.textScales, label: "Text size") { scale in
+                    scale == 100 ? "Standard" : "\(scale)%"
+                }
+            }
+            SettingsDivider()
             SettingsToggleRow(
                 "Readability",
                 note: "Larger, clearer text: one screen at 1440 x 810, \(SettingsFormat.degrees(SpaceSettings.readabilityWidthDeg)) wide. "
@@ -585,7 +596,7 @@ struct SettingsSupportCard: View {
                 SettingsChip("Works", lit: true)
             }
             SettingsDivider()
-            SettingsRow("XREAL One, One Pro, One Pro+, 1S", note: "The same head tracking as the Aura. Not tried on a Mac yet.") {
+            SettingsRow("XREAL One, One Pro, One Pro+, 1S", note: "The same head tracking as the Aura. The 1S reported working on an M4 Pro Mac; the others not tried on a Mac yet.") {
                 SettingsChip("Not tried yet")
             }
             SettingsDivider()

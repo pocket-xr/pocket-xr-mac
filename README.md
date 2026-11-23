@@ -9,8 +9,9 @@ same rules, no account and no paid tier.
 > **A first version.** Pocket XR for Mac 0.3 has been used with one pair of glasses on one Mac: the **XREAL Aura on an
 > Intel MacBook Air (macOS 14)**. There it showed one to three screens, 3D, head tracking, Steady mode, the control
 > panel, saved arrangements, the launcher, Pocket mode, a game controller, and hand tracking with the Aura's camera and
-> with the Mac's own. No other glasses and no Apple Silicon Mac have been tried. If you try it, please use **Send logs
-> to Mike** in the menu, whether it works or not.
+> with the Mac's own. A user has also reported the **XREAL 1S on a MacBook Pro with an M4 Pro** working, with three
+> screens (November 2026), the first report from an Apple Silicon Mac. No other glasses have been tried. If you try it,
+> please use **Send logs to Mike** in the menu, whether it works or not.
 
 ## Download
 
@@ -20,7 +21,8 @@ same rules, no account and no paid tier.
 3. macOS asks to allow **Screen Recording**: allow it in System Settings, Privacy & Security, Screen Recording, then
    open Pocket XR again. It is how Pocket XR shows your screens in the glasses.
 
-Needs macOS 14 or newer. One app for Intel and Apple Silicon Macs (Apple Silicon not tried yet).
+Needs macOS 14 or newer. One app for Intel and Apple Silicon Macs (on Apple Silicon, one user's report so far: an
+M4 Pro with the XREAL 1S).
 
 ## Show this Mac on your phone
 
@@ -102,6 +104,9 @@ Pocket XR lives in the menu bar, under the glasses icon. A two minute tour opens
   curve**, **Less curve**.
 - **Tracking**: Body Anchor (screens stay in the room) or Smooth Follow (they drift back in front of you), or off.
 - **Screens**: 1, 2 or 3.
+- **Text too small?** **Text size** (Settings, Space, Screens: 125% or 150%) draws everything larger on every screen,
+  sharp, without making the screens wider. **Nearer** and **Further** only change how far away the screens look: each
+  keeps its width as seen, so they do not make text larger.
 - **Settings…**: a live picture of your Space, presets, eye distance, brightness, the glow around the screen you look
   at and its colour, edge fade, head scroll, pointer follows head, the tracking readings, a Glasses report, settings
   saved to and restored from a file, open at login.
@@ -139,7 +144,8 @@ To see every tour step and settings pane as pictures, without glasses:
 | Glasses | Head tracking | 3D side by side |
 | --- | --- | --- |
 | XREAL Aura | Yes, seen working | Yes, Pocket XR turns it on, seen working |
-| XREAL One, One Pro, One Pro+, 1S | Written, not tried on a Mac | Written, not tried on a Mac |
+| XREAL 1S | A user's report (M4 Pro MacBook Pro, Nov 2026): works, three screens; head tracking not said | Written, not reported |
+| XREAL One, One Pro, One Pro+ | Written, not tried on a Mac | Written, not tried on a Mac |
 | XREAL Air, Air 2, Air 2 Pro, Air 2 Ultra, VITURE | Experimental switch in Settings, not tried on a Mac by the project | From the glasses' own menu |
 | XBX A01, XBX A01+ | Experimental switch in Settings (the Air's stream on HID interface 1), untested | From the glasses' own menu |
 

@@ -379,7 +379,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private func ensureDisplays(glassesID: CGDirectDisplayID?) {
         if displays == nil {
             madeScreens = store.s.screens
-            madeSharper = store.s.sharperText
+            madeSharper = store.s.hiDPI
             madeWidth = store.s.screenSize.width
             let d = VirtualDisplays(count: madeScreens, width: store.s.screenSize.width, height: store.s.screenSize.height, hiDPI: madeSharper)
             displays = d
@@ -419,9 +419,12 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             settings?.apply()
         }
         if displays != nil {
-            state.needsRestart = new.screens != madeScreens || new.sharperText != madeSharper || new.screenSize.width != madeWidth
+            state.needsRestart = new.screens != madeScreens || new.hiDPI != madeSharper || new.screenSize.width != madeWidth
         }
         if old.readability != new.readability { plog(SpaceSettings.readabilityLine(from: old, to: new)) }
+        if old.textScale != new.textScale {
+            plog("text size: \(old.textScale)% -> \(new.textScale)%, display \(new.screenSize.width)x\(new.screenSize.height)\(new.hiDPI ? " HiDPI" : "") from the next start")
+        }
         if old.shortcuts != new.shortcuts { registerShortcuts() }
         if old.launchAtLogin != new.launchAtLogin { setLaunchAtLogin(new.launchAtLogin) }
         if old.stayAwakeOnAdapter != new.stayAwakeOnAdapter { StayAwake.set(new.stayAwakeOnAdapter) }

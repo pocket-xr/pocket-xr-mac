@@ -173,6 +173,10 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     public var curve = 0.0
     /// HiDPI virtual displays (twice the pixels). Takes effect when Pocket XR starts.
     public var sharperText = false
+    /// Text size, percent: 100, 125 or 150 ([textScales]). Above 100 each virtual display is made smaller in points
+    /// (1536x864, 1280x720), so text and everything else is drawn larger, at the same width as seen, and HiDPI, so
+    /// it keeps at least as many pixels as the glasses can show. Takes effect when Pocket XR starts.
+    public var textScale = 100
     public var presets = [SpacePreset]()
     /// Where the whole Space has been moved to by hand, degrees from where Recentre put it (left and up positive).
     /// Recentre brings it back to 0.
@@ -276,8 +280,31 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     /// own change used 30 degrees, 48 pixels a degree, which on a Mac draws text no larger than the usual screens.)
     public static let readabilityWidthDeg = 34.0
 
-    /// The size each virtual display is made at.
-    public var screenSize: (width: Int, height: Int) { readability ? Self.readabilityScreenSize : Self.normalScreenSize }
+    /// The text sizes offered, percent.
+    public static let textScales = [100, 125, 150]
+
+    /// A display's size in points for [scale] percent: 1920x1080 divided by it, kept 16:9 and even.
+    public static func screenSize(textScale scale: Int) -> (width: Int, height: Int) {
+        let s = Double(min(max(scale, 100), 400)) / 100
+        let w = Int((Double(normalScreenSize.width) / s / 16).rounded()) * 16
+        return (w, w * 9 / 16)
+    }
+
+    /// The size each virtual display is made at: Readability's, else the text size's.
+    public var screenSize: (width: Int, height: Int) {
+        readability ? Self.readabilityScreenSize : Self.screenSize(textScale: textScale)
+    }
+
+    /// Whether the virtual displays are made HiDPI: with Sharper text, or with a text size above 100 (outside
+    /// Readability, which is sized to one screen pixel a glasses pixel).
+    public var hiDPI: Bool { sharperText || (!readability && textScale > 100) }
+
+    /// Screen pixels a degree as seen: [widthPx] across [widthDeg]. Glasses with a 1920 pixel picture about 46 degrees
+    /// across (the XREAL Air; the 1S and One are close) show about 42; anything above that is squeezed, so text is
+    /// smaller than the glasses could draw it.
+    public static func pixelsPerDegree(widthPx: Int, widthDeg: Double) -> Double {
+        widthDeg > 0 ? Double(widthPx) / widthDeg : 0
+    }
 
     /// Turns Readability on or off. On keeps the screens, size and screen moves as they are, then sets one screen,
     /// [readabilityWidthDeg] wide, centred (no screen moves). Off puts exactly those back. Doing it twice does nothing
@@ -327,6 +354,9 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         s.steadyZoom = min(max(s.steadyZoom, Self.steadyZoomRange.lowerBound), Self.steadyZoomRange.upperBound)
         s.steadyGapDeg = min(max(s.steadyGapDeg, Self.steadyGapRange.lowerBound), Self.steadyGapRange.upperBound)
         if s.pinnedApps.count > Self.maxPinnedApps { s.pinnedApps = Array(s.pinnedApps.prefix(Self.maxPinnedApps)) }
+        if !Self.textScales.contains(s.textScale) {
+            s.textScale = Self.textScales.min { abs($0 - s.textScale) < abs($1 - s.textScale) } ?? 100
+        }
         return s
     }
 
@@ -340,6 +370,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         distance = try c.decodeIfPresent(Double.self, forKey: .distance) ?? d.distance
         curve = try c.decodeIfPresent(Double.self, forKey: .curve) ?? d.curve
         sharperText = try c.decodeIfPresent(Bool.self, forKey: .sharperText) ?? d.sharperText
+        textScale = try c.decodeIfPresent(Int.self, forKey: .textScale) ?? d.textScale
         presets = try c.decodeIfPresent([SpacePreset].self, forKey: .presets) ?? d.presets
         want3D = try c.decodeIfPresent(Bool.self, forKey: .want3D) ?? d.want3D
         ipdMm = try c.decodeIfPresent(Double.self, forKey: .ipdMm) ?? d.ipdMm
