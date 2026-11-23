@@ -2,7 +2,9 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
-## Unreleased
+## 0.5.8
+
+Details: [docs/release-notes-0.5.8.md](docs/release-notes-0.5.8.md).
 
 - **Text size** (Settings, Space, Screens): Standard, 125% or 150%. Everything on every screen is drawn larger, at the
   same width as seen, so the side screens of three do not move further out. Each screen gets fewer points (1536 x 864,
