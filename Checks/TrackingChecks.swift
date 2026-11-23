@@ -86,6 +86,7 @@ func trackingChecks() {
     trackingChainFollowChecks()
     trackingChainHoldChecks()
     trackingDiagnosticsChecks()
+    tapChecks()
 }
 
 private func trackingSettingsChecks() {

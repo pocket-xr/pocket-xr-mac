@@ -2,6 +2,16 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## Unreleased
+
+- **Taps on the glasses** (Settings, Head tracking), off by default: tap the glasses' frame twice to recentre, three
+  times to switch the view. Switching the view is the Mac's nearest to the Steam Deck's switch between the Space and
+  Steady mode: Steady mode on or off where the glasses have it (the Aura, the One series), else Body Anchor and Smooth
+  Follow in turn. The taps are read from the head tracking stream, for every model the Mac reads it from, with the
+  Deck's detector and its values: a sharp jolt away from the 30 ms average, quiet before it, over within 40 ms, the
+  head turning slower than 60 degrees a second, and two or three such taps 0.08 to 0.45 s apart. Checked with made-up
+  motion (taps, head turns, walking, hard steps); not yet tried with real taps on glasses, on the Mac or the Deck.
+
 ## 0.5.7
 
 Details: [docs/release-notes-0.5.7.md](docs/release-notes-0.5.7.md).

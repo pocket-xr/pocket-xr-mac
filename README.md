@@ -118,6 +118,9 @@ screen more or fewer. Holding Control and Option, moving the pointer carries the
 - **Hand tracking** (Control-Option-H): point and pinch, seen by the glasses' camera, or by the Mac's camera turned
   to face you (an air trackpad). A pinch clicks once Pocket XR is allowed under Accessibility. On a 2018 MacBook Air
   it finds a hand three or four times a second with the Aura's camera.
+- **Taps on the glasses** (Settings, Head tracking; off by default): tap the frame twice to recentre, three times to
+  switch the view (Steady mode on or off where the glasses have it, else Body Anchor and Smooth Follow in turn). Read
+  from the head tracking stream, so it needs head tracking. New and not yet tried with real taps.
 
 Every control has a key that works in any app, all with Control-Option: R recentre, S Steady mode, = and - size,
 ] and [ distance, . and , curve, L next layout, D 3D, P pointer to the screen you look at, Space the launcher,

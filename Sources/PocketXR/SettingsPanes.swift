@@ -378,6 +378,12 @@ struct SettingsTrackingPane: View {
                 note: "The pointer jumps to the screen you look at when it is on another screen.",
                 isOn: $store.s.pointerFollowsHead
             )
+            SettingsDivider()
+            SettingsToggleRow(
+                "Taps on the glasses",
+                note: "Tap the glasses' frame twice to recentre, three times to switch the view: Steady mode on or off where your glasses have it, else Body Anchor and Smooth Follow in turn. Needs head tracking. New and not yet tried with real taps: if it misses taps, or acts when you did not tap, send logs.",
+                isOn: $store.s.glassesTaps
+            )
         }
     }
 
