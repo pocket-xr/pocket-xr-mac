@@ -2,7 +2,9 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
-## Unreleased
+## 0.5.7
+
+Details: [docs/release-notes-0.5.7.md](docs/release-notes-0.5.7.md).
 
 - **Stay awake on the power adapter** (Settings, Help, Pocket XR; also in the menu under **Show this Mac on your
   phone**), off by default. While this Mac is plugged in, it does not go to sleep when left idle; its screen still can.
