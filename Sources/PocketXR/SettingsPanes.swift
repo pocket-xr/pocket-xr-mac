@@ -395,8 +395,15 @@ struct SettingsTrackingPane: View {
             SettingsDivider()
             SettingsToggleRow(
                 "Taps on the glasses",
-                note: "Tap the glasses' frame twice to recentre, three times to switch the view: Steady mode on or off where your glasses have it, else Body Anchor and Smooth Follow in turn. Needs head tracking. New and not yet tried with real taps: if it misses taps, or acts when you did not tap, send logs.",
+                note: "Tap the glasses' frame twice to recentre, three times to switch the view: Steady mode on or off where your glasses have it, else Body Anchor and Smooth Follow in turn. Up to about 2 taps a second. Needs head tracking. Tap sensitivity: higher for softer taps, lower if it acts when you did not tap. Not yet tried on a Mac with glasses: the log says what each jolt was, so send logs if it misses.",
                 isOn: $store.s.glassesTaps
+            )
+            SettingsSliderRow(
+                "Tap sensitivity",
+                value: $store.s.tapSensitivity,
+                range: GlassesTaps.sensitivityRange,
+                step: 5,
+                valueText: "\(Int(store.s.tapSensitivity.rounded()))%"
             )
         }
     }

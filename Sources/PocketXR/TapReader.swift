@@ -27,11 +27,20 @@ final class TapReader: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Tap sensitivity, percent (GlassesTaps.sensitivityRange). Set from the main thread.
+    func setSensitivity(_ percent: Double) {
+        lock.lock()
+        detector.setSensitivity(percent)
+        lock.unlock()
+    }
+
     func feed(_ s: ImuSample) {
         lock.lock()
         guard on else { lock.unlock(); return }
         let n = detector.feed(t: Double(s.timestampNs) / 1e9, gyro: s.gyro, accel: s.accel)
+        let lines = detector.takeLog()
         lock.unlock()
+        for line in lines { plog(line) }
         guard let n, let call = onTaps else { return }
         DispatchQueue.main.async { MainActor.assumeIsolated { call(n) } }
     }

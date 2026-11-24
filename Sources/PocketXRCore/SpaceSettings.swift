@@ -229,6 +229,8 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     /// Taps on the glasses' frame (GlassesTaps): two recentre, three switch the view. Off by default: not yet tried
     /// with real taps.
     public var glassesTaps = false
+    /// Tap sensitivity, percent (25 to 300): above 100 softer taps count, below only firmer ones.
+    public var tapSensitivity = 100.0
 
     // Steady mode
     /// Steady mode uses the glasses' Spatial Anchor (6DoF) where they have it.
@@ -354,6 +356,8 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         s.steadyZoom = min(max(s.steadyZoom, Self.steadyZoomRange.lowerBound), Self.steadyZoomRange.upperBound)
         s.steadyGapDeg = min(max(s.steadyGapDeg, Self.steadyGapRange.lowerBound), Self.steadyGapRange.upperBound)
         if s.pinnedApps.count > Self.maxPinnedApps { s.pinnedApps = Array(s.pinnedApps.prefix(Self.maxPinnedApps)) }
+        s.tapSensitivity = s.tapSensitivity.isNaN ? 100
+            : min(max(s.tapSensitivity, GlassesTaps.sensitivityRange.lowerBound), GlassesTaps.sensitivityRange.upperBound)
         if !Self.textScales.contains(s.textScale) {
             s.textScale = Self.textScales.min { abs($0 - s.textScale) < abs($1 - s.textScale) } ?? 100
         }
@@ -387,6 +391,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         headScroll = try c.decodeIfPresent(Bool.self, forKey: .headScroll) ?? d.headScroll
         pointerFollowsHead = try c.decodeIfPresent(Bool.self, forKey: .pointerFollowsHead) ?? d.pointerFollowsHead
         glassesTaps = try c.decodeIfPresent(Bool.self, forKey: .glassesTaps) ?? d.glassesTaps
+        tapSensitivity = try c.decodeIfPresent(Double.self, forKey: .tapSensitivity) ?? d.tapSensitivity
         steadySixDof = try c.decodeIfPresent(Bool.self, forKey: .steadySixDof) ?? d.steadySixDof
         hidTracking = try c.decodeIfPresent(Bool.self, forKey: .hidTracking) ?? d.hidTracking
         shortcuts = try c.decodeIfPresent(Bool.self, forKey: .shortcuts) ?? d.shortcuts
