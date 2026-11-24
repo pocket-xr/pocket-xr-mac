@@ -2,7 +2,9 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
-## Unreleased
+## 0.5.10
+
+Details: [docs/release-notes-0.5.10.md](docs/release-notes-0.5.10.md).
 
 - **Taps on the glasses: softer taps count.** The detector is now the Steam Deck's 0.7.11 one. A tester found the
   first one (which 0.5.8 ported) needed a lot of force. What sets a tap apart is how suddenly it starts, so a tap is
