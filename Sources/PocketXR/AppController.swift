@@ -122,6 +122,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         registerShortcuts()
         StayAwake.set(store.s.stayAwakeOnAdapter)
         taps.onTaps = { [weak self] n in self?.glassesTapped(n) }
+        taps.setSensitivity(store.s.tapSensitivity)
         taps.enabled = store.s.glassesTaps
         if UserDefaults.standard.object(forKey: Self.hostKey) as? Bool ?? true {
             host.start()
@@ -443,6 +444,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if old.shortcuts != new.shortcuts { registerShortcuts() }
         if old.launchAtLogin != new.launchAtLogin { setLaunchAtLogin(new.launchAtLogin) }
         if old.stayAwakeOnAdapter != new.stayAwakeOnAdapter { StayAwake.set(new.stayAwakeOnAdapter) }
+        if old.tapSensitivity != new.tapSensitivity {
+            taps.setSensitivity(new.tapSensitivity)
+            plog("tap sensitivity: \(Int(new.tapSensitivity.rounded()))%")
+        }
         if old.glassesTaps != new.glassesTaps {
             plog("taps on the glasses: \(new.glassesTaps ? "on" : "off")")
             taps.enabled = new.glassesTaps

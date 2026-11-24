@@ -125,7 +125,8 @@ screen more or fewer. Holding Control and Option, moving the pointer carries the
   it finds a hand three or four times a second with the Aura's camera.
 - **Taps on the glasses** (Settings, Head tracking; off by default): tap the frame twice to recentre, three times to
   switch the view (Steady mode on or off where the glasses have it, else Body Anchor and Smooth Follow in turn). Read
-  from the head tracking stream, so it needs head tracking. New and not yet tried with real taps.
+  from the head tracking stream, so it needs head tracking. **Tap sensitivity** beside it: higher for softer taps.
+  Not yet tried on a Mac with glasses.
 
 Every control has a key that works in any app, all with Control-Option: R recentre, S Steady mode, = and - size,
 ] and [ distance, . and , curve, L next layout, D 3D, P pointer to the screen you look at, Space the launcher,
