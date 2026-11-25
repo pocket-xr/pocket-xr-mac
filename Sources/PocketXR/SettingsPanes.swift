@@ -29,7 +29,7 @@ struct SettingsSpacePane: View {
         let count: Int = store.s.screens
         return SettingsCard("Screens") {
             SettingsRow("Screens", note: "Takes effect when Pocket XR opens again.") {
-                SettingsSegmented(selection: $store.s.screens, values: [1, 2, 3], label: "Screens") { n in "\(n)" }
+                SettingsSegmented(selection: $store.s.screens, values: Array(SpaceSettings.screensRange), label: "Screens") { n in "\(n)" }
             }
             if state.needsRestart {
                 SettingsDivider()

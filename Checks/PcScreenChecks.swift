@@ -22,6 +22,7 @@ func pcScreenChecks() {
     check(PcHostAddress.parse("") == nil && PcHostAddress.parse(":48989") == nil, "no host")
     check(PcHostAddress.parse("pc:0") == nil && PcHostAddress.parse("pc:x") == nil && PcHostAddress.parse("a:1:2") == nil, "bad ports")
     check(PcHost(name: "M", address: "10.0.0.2", port: 47989).moonlightAddress == "10.0.0.2", "the usual port is left out")
+    check(PcHostAddress.ports(3) == [47989, 48989, 49989] && PcHostAddress.ports(6).last == 52989, "Apollo ports 1000 apart")
     check(PcHost(name: "M", address: "10.0.0.2", port: 48989).moonlightAddress == "10.0.0.2:48989", "another port is given")
 
     // PCs and their Apollos.

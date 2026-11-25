@@ -51,7 +51,7 @@ public struct PanelPlacement: Equatable, Sendable {
 }
 
 /// The Space's layout and settings, as Pocket XR's PanelLayout has them (numbers from the Deck's space.py), and the
-/// premade arrangements of Pocket XR's ArrangeLayouts for 1 to 3 screens.
+/// premade arrangements of Pocket XR's ArrangeLayouts for 1 to 6 screens (ScreenLimit.most).
 public enum SpaceLayout {
     public static let defaultDistance = 1.4
     public static let defaultWidthDeg = 40.0
@@ -75,15 +75,22 @@ public enum SpaceLayout {
     /// Theater: the other screens' width as a share of the width setting, at the user's distance.
     public static let theaterFlankShare = 0.6
 
+    /// No arrangement reaches further round than this either side of straight ahead, degrees, so the two ends of a
+    /// long row never meet behind the head (only more than 3 screens can get there: 3 at 100 degrees span 304).
+    public static let maxYawDeg = 179.0
+
     /// [count] screens side by side on an arc around the head, the middle one straight ahead. Each angular width is
-    /// [widthDeg]; [aspects] gives each screen's width / height.
+    /// [widthDeg]; [aspects] gives each screen's width / height. A row that would go further round than 179 degrees
+    /// either side (4 or more wide screens) is narrowed to fit.
     public static func row(aspects: [Double], widthDeg: Double, distance: Double, gapDeg: Double = gapDeg) -> [PanelPlacement] {
         let n = aspects.count
         guard n > 0 else { return [] }
-        let step = widthDeg + gapDeg
+        let widest = (2 * maxYawDeg - gapDeg * Double(n - 1)) / Double(n)
+        let w = min(widthDeg, widest)
+        let step = w + gapDeg
         let first = step * Double(n - 1) / 2 // the leftmost, left positive
         return aspects.enumerated().map { i, aspect in
-            PanelPlacement(yawDeg: first - step * Double(i), widthDeg: widthDeg, aspect: aspect, distance: distance)
+            PanelPlacement(yawDeg: first - step * Double(i), widthDeg: w, aspect: aspect, distance: distance)
         }
     }
 
@@ -95,7 +102,7 @@ public enum SpaceLayout {
 
     // MARK: - The premade arrangements
 
-    /// The layouts offered for [count] screens (1...3), in menu order. With one screen "Main + side" and "Stacked"
+    /// The layouts offered for [count] screens (1...6), in menu order. With one screen "Main + side" and "Stacked"
     /// would be the same as "Center", so they are left out.
     public static func choices(count: Int) -> [ArrangeLayout] {
         if count <= 0 { return [] }
@@ -109,25 +116,31 @@ public enum SpaceLayout {
         case .row:
             if count <= 1 { return "Center" }
             if count == 2 { return "Side by side" }
-            return "Three across"
+            return "\(numberWord(count).capitalized) across"
         case .mainSide:
             if count <= 1 { return "Center" } // one screen: the same as the row
             if count == 2 { return "Main + side" }
-            return "Main + two stacked"
+            return "Main + \(numberWord(count - 1)) stacked"
         case .stacked:
-            return "Stacked"
+            return count > 3 ? "Two rows" : "Stacked"
         case .theater:
             return "Theater"
         }
     }
 
+    /// A count as a word, for the layouts' names ("three", "four" ...); a number past six.
+    private static func numberWord(_ n: Int) -> String {
+        let words = ["zero", "one", "two", "three", "four", "five", "six"]
+        return n >= 0 && n < words.count ? words[n] : "\(n)"
+    }
+
     /// Where each screen goes. [aspects] are width / height per screen; [widthDeg] the main screen's angular width,
-    /// [distance] metres, [curve] 0...2.5 applied to every screen. Anything else than 1 to 3 screens, and the two
-    /// "main" layouts with one screen, fall back to the row.
+    /// [distance] metres, [curve] 0...2.5 applied to every screen. Anything else than 1 to 6 screens
+    /// (ScreenLimit.most), and the two "main" layouts with one screen, fall back to the row.
     public static func arrange(layout: ArrangeLayout, aspects: [Double], widthDeg: Double, distance: Double, curve: Double) -> [PanelPlacement] {
         let n = aspects.count
         var out: [PanelPlacement]
-        if n < 1 || n > 3 {
+        if n < 1 || n > ScreenLimit.most {
             out = row(aspects: aspects, widthDeg: widthDeg, distance: distance)
         } else {
             switch layout {
@@ -138,9 +151,13 @@ public enum SpaceLayout {
                     ? row(aspects: aspects, widthDeg: widthDeg, distance: distance)
                     : mainSide(aspects: aspects, widthDeg: widthDeg, distance: distance)
             case .stacked:
-                out = n == 1
-                    ? row(aspects: aspects, widthDeg: widthDeg, distance: distance)
-                    : stacked(aspects: aspects, widthDeg: widthDeg, distance: distance)
+                if n == 1 {
+                    out = row(aspects: aspects, widthDeg: widthDeg, distance: distance)
+                } else if n > 3 {
+                    out = twoRows(aspects: aspects, widthDeg: widthDeg, distance: distance)
+                } else {
+                    out = stacked(aspects: aspects, widthDeg: widthDeg, distance: distance)
+                }
             case .theater:
                 out = theater(aspects: aspects, widthDeg: widthDeg, distance: distance)
             }
@@ -180,7 +197,7 @@ public enum SpaceLayout {
     // MARK: - Each arrangement
 
     /// The first screen [widthDeg] wide, the others in a column to its right: one at 0.6 of the main screen's width
-    /// level with its middle, or two at 0.5 one above the other, 2 degrees apart, the column's middle level with
+    /// level with its middle, or two to five at 0.5 one above the other, 2 degrees apart, the column's middle level with
     /// the main screen's. The whole block is centred. All shrink together if the column would pass 35 degrees up.
     private static func mainSide(aspects: [Double], widthDeg: Double, distance: Double) -> [PanelPlacement] {
         let sides = Array(aspects.dropFirst())
@@ -224,20 +241,69 @@ public enum SpaceLayout {
         return out
     }
 
+    /// Four to six screens in two rows, the first half (the extra one with an odd count) on top, each row on an arc
+    /// with its middle straight ahead, 2 degrees between screens and between the rows, the block centred on the
+    /// horizon. Screens tipped up or down reach a little further sideways at their far corners, so each row is spaced
+    /// by that much. All shrink together if the rows would pass 35 degrees up or down, or go round past 179 degrees.
+    private static func twoRows(aspects: [Double], widthDeg: Double, distance: Double) -> [PanelPlacement] {
+        let topCount = (aspects.count + 1) / 2
+        let rows = [Array(aspects.prefix(topCount)), Array(aspects.dropFirst(topCount))]
+        func rowHeight(_ r: [Double], _ w: Double) -> Double { r.map { heightDeg(widthDeg: w, aspect: $0) }.max() ?? 0 }
+        func pitches(_ w: Double) -> [Double] {
+            let top = rowHeight(rows[0], w)
+            let bottom = rowHeight(rows[1], w)
+            let half = (top + gapDeg + bottom) / 2
+            return [half - top / 2, -half + bottom / 2]
+        }
+        // From one screen's centre to the next in a row: as wide as its far corners reach, plus the gap.
+        func step(_ r: [Double], _ w: Double, _ pitch: Double) -> Double {
+            var half = w / 2
+            for a in r {
+                half = max(half, cornerReachDeg(widthDeg: w, heightDeg: heightDeg(widthDeg: w, aspect: a), pitchDeg: pitch))
+            }
+            return 2 * half + gapDeg
+        }
+        let tall = fitScale { k in rowHeight(rows[0], widthDeg * k) + gapDeg + rowHeight(rows[1], widthDeg * k) }
+        let round = fitScale(limit: 2 * maxYawDeg) { k in
+            let w = widthDeg * k
+            let p = pitches(w)
+            return (0..<2).map { i in step(rows[i], w, p[i]) * Double(rows[i].count) - gapDeg }.max() ?? 0
+        }
+        let w = widthDeg * min(tall, round)
+        let p = pitches(w)
+        var out = [PanelPlacement]()
+        for (i, r) in rows.enumerated() {
+            let s = step(r, w, p[i])
+            let first = s * Double(r.count - 1) / 2
+            for (j, a) in r.enumerated() {
+                out.append(PanelPlacement(yawDeg: first - s * Double(j), pitchDeg: p[i], widthDeg: w, aspect: a, distance: distance))
+            }
+        }
+        return out
+    }
+
     /// The first screen far away and large: 4.2 m wide at 5 m for a width setting of 40 degrees (45.6 degrees as
     /// seen), wider or narrower with the setting. Any other screens flank it at the user's distance, 0.6 of the
-    /// width setting each: one to its right, or the second to its left and the third to its right. The block is
-    /// centred, so with two screens the big one sits a little left of straight ahead.
+    /// width setting each: one to its right, or the second to its left and the third to its right, and with 4 to 6
+    /// screens the rest further out the same way, left then right. The block is centred, so with two screens the big
+    /// one sits a little left of straight ahead. With many flanks all shrink together so none goes round past 179
+    /// degrees.
     private static func theater(aspects: [Double], widthDeg: Double, distance: Double) -> [PanelPlacement] {
         let mainAspect = aspects[0]
         let others = Array(aspects.dropFirst())
-        let s = fitScale { k in
+        let tall = fitScale { k in
             var h = heightDeg(widthDeg: theaterWidthDeg(widthDeg: widthDeg * k), aspect: mainAspect)
             for a in others {
                 h = max(h, heightDeg(widthDeg: widthDeg * theaterFlankShare * k, aspect: a))
             }
             return h
         }
+        // The whole block's width round the head: the big screen and every flank, 2 degrees apart.
+        let flanks = Double(others.count)
+        let round = others.count <= 2 ? 1 : fitScale(limit: 2 * maxYawDeg) { k in
+            theaterWidthDeg(widthDeg: widthDeg * k) + flanks * (gapDeg + widthDeg * theaterFlankShare * k)
+        }
+        let s = min(tall, round)
         let mainW = theaterWidthDeg(widthDeg: widthDeg * s)
         let flankW = widthDeg * theaterFlankShare * s
         let step = mainW / 2 + gapDeg + flankW / 2 // from the big screen's centre to a flank's
@@ -252,11 +318,15 @@ public enum SpaceLayout {
                 PanelPlacement(yawDeg: -(mainX + step), widthDeg: flankW, aspect: others[0], distance: distance),
             ]
         }
-        return [
-            PanelPlacement(yawDeg: 0, widthDeg: mainW, aspect: mainAspect, distance: theaterDistance),
-            PanelPlacement(yawDeg: step, widthDeg: flankW, aspect: others[0], distance: distance),
-            PanelPlacement(yawDeg: -step, widthDeg: flankW, aspect: others[1], distance: distance),
-        ]
+        var out = [PanelPlacement(yawDeg: 0, widthDeg: mainW, aspect: mainAspect, distance: theaterDistance)]
+        for (i, a) in others.enumerated() {
+            let yaw = step + Double(i / 2) * (flankW + gapDeg) // left for the 1st, 3rd, 5th flank; right for the others
+            out.append(PanelPlacement(yawDeg: i % 2 == 0 ? yaw : -yaw, widthDeg: flankW, aspect: a, distance: distance))
+        }
+        // One flank more on the left (3 or 5 of them): the block's middle straight ahead, as with two screens.
+        let mid = middle(out).yawDeg
+        for i in out.indices { out[i].yawDeg -= mid }
+        return out
     }
 
     // MARK: - Helpers
@@ -300,9 +370,8 @@ public enum SpaceLayout {
     }
 
     /// The largest scale, at most 1, at which [extent] (the arrangement's whole height in degrees at that scale)
-    /// stays inside 35 degrees up and down.
-    private static func fitScale(_ extent: (Double) -> Double) -> Double {
-        let limit = 2 * maxPitchDeg
+    /// stays inside 35 degrees up and down, or inside another [limit] (a whole width round the head).
+    private static func fitScale(limit: Double = 2 * maxPitchDeg, _ extent: (Double) -> Double) -> Double {
         if extent(1) <= limit { return 1 }
         var lo = 0.0
         var hi = 1.0

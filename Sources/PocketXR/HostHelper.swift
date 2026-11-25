@@ -357,7 +357,8 @@ enum HostPermissions {
     }
 }
 
-/// Pocket XR for Mac as the PC end of the phone's PC screens: three host instances, the PC helper's words and the
+/// Pocket XR for Mac as the PC end of the phone's PC screens: six host instances (ScreenLimit.most), the PC helper's
+/// words and the
 /// virtual screens, started and stopped together.
 final class HostService: @unchecked Sendable {
     private(set) var shared: HostShared?

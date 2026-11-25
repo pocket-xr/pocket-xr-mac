@@ -3,7 +3,8 @@ import CoreGraphics
 import CVirtualDisplay
 import PocketXRCore
 
-/// The virtual displays the phone's PC screens show, one per host (up to three), each at the phone window's shape.
+/// The virtual displays the phone's PC screens show, one per host (up to six, ScreenLimit.most), each at the phone
+/// window's shape. Each is made only when the phone first asks for its screen.
 /// Ported from the Pocket XR PC helper for Mac's VirtualScreens (build 9), where it was measured on the Air, macOS 14.8:
 /// - macOS gives a new display the first free display id, so each is made once and kept while Pocket XR runs (it
 ///   also keeps clear of Apple bug FB17797423: capture picking the wrong display after one comes back).

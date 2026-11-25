@@ -26,6 +26,11 @@ public struct PcHost: Equatable, Hashable, Sendable {
 
 public enum PcHostAddress {
     public static let defaultPort = 47989
+    /// Each extra Apollo's HTTP port is this much above the one before (48989, 49989 ...).
+    public static let portStep = 1000
+
+    /// The HTTP ports of a PC's first [count] Apollos: 47989, 48989, 49989 ...
+    public static func ports(_ count: Int) -> [Int] { (0..<max(count, 0)).map { defaultPort + portStep * $0 } }
 
     /// Host and port from `192.168.1.20`, `192.168.1.20:48989` or `pc.local:48989`; nil when empty or malformed.
     /// (IPv6 is not used: the Mac and the PC on one home network have IPv4.)

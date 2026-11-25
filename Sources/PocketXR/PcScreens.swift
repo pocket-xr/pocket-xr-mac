@@ -2,7 +2,7 @@ import AppKit
 import PocketXRCore
 
 /// PC screens: a Windows PC's screens in the glasses. Each press of the launcher's PC screen button opens the next
-/// one, up to one per floating screen and one per Apollo on the PC (the PC setup makes three):
+/// one, up to one per floating screen and one per Apollo on the PC (the PC setup makes three; up to six are used):
 ///
 /// 1. Moonlight is installed if it is missing, after one question.
 /// 2. The PC is found on the local network (its Apollos by mDNS, and the Pocket XR PC helper by broadcast).
@@ -39,7 +39,7 @@ final class PcScreens {
         let used = Set(open.map(\.displayID))
         let order = screens.indices.sorted { a, b in (a == preferred ? 0 : 1, a) < (b == preferred ? 0 : 1, b) }
         guard let index = order.first(where: { !used.contains(screens[$0].id) }) else {
-            say(screens.count < 3 ? "Every floating screen shows a PC screen. Add a floating screen in Settings for another."
+            say(screens.count < ScreenLimit.most ? "Every floating screen shows a PC screen. Add a floating screen in Settings for another."
                 : "Every floating screen shows a PC screen.")
             return
         }
@@ -157,8 +157,13 @@ final class PcScreens {
         let pc = helper.find(excluding: own)
         if let pc {
             plog("PC screens: PC helper on \(pc.name) at \(pc.address)")
-            // Its PC's Apollos at the ports the PC setup gives, for a network where mDNS does not get through.
-            for port in [PcHostAddress.defaultPort, 48989, 49989] where !hosts.contains(where: { $0.address == pc.address && $0.port == port }) {
+            // Its PC's Apollos at the ports the PC setup gives, for a network where mDNS does not get through: the
+            // first three always tried, as before; a fourth to sixth only while the one before it answers, so a PC
+            // with three costs no extra waits.
+            for port in PcHostAddress.ports(ScreenLimit.most) {
+                let k = (port - PcHostAddress.defaultPort) / PcHostAddress.portStep
+                if hosts.contains(where: { $0.address == pc.address && $0.port == port }) { continue }
+                if k >= 3, !hosts.contains(where: { $0.address == pc.address && $0.port == port - PcHostAddress.portStep }) { break }
                 let h = PcHost(name: pc.name, address: pc.address, port: port)
                 if let name = PcFinder.serverName(h) { hosts.append(PcHost(name: name, address: pc.address, port: port)) }
             }

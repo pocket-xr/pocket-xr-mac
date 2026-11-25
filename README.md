@@ -15,7 +15,7 @@ same rules, no account and no paid tier.
 
 ## Download
 
-1. Download `PocketXR-Mac-0.5.10.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
+1. Download `PocketXR-Mac-0.5.11.zip` from [Releases](https://github.com/pocket-xr/pocket-xr-mac/releases/latest) and
    open it. Move **Pocket XR** to Applications.
 2. Plug your glasses in and open Pocket XR. It lives in the menu bar, under a pair of glasses.
 3. macOS asks to allow **Screen Recording**: allow it in System Settings, Privacy & Security, Screen Recording, then
@@ -50,7 +50,7 @@ a MacBook's lid still sleeps it unless a display is connected. Not yet tried wit
 
 ## How it works
 
-Pocket XR adds 1 to 3 screens to your Mac, to the right of its own screen. Move the pointer off the right edge and
+Pocket XR adds 1 to 6 screens to your Mac, to the right of its own screen. Move the pointer off the right edge and
 it is on them: drag apps there, click and type as usual. In your glasses, those screens float in front of you and
 stay put as you turn your head. With glasses that do 3D side by side, they sit at a real depth.
 

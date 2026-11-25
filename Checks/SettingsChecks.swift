@@ -18,7 +18,13 @@ func settingsChecks() {
     wild.curve = -1
     wild.ipdMm = 10
     let c = wild.clamped
-    check(c.screens == 3 && c.curve == 0 && c.ipdMm == 54, "values brought inside their ranges")
+    check(c.screens == 6 && c.curve == 0 && c.ipdMm == 54, "values brought inside their ranges")
+    check(SpaceSettings().screens == 2, "two floating screens by default, as before six were offered")
+    check(SpaceSettings.screensRange == 1...6 && ScreenLimit.most == 6, "1 to 6 screens")
+    var six = SpaceSettings()
+    six.screens = 6
+    six.moveScreen(5, yawDeg: 4, pitchDeg: -2)
+    check(six.clamped.screenYawDeg.count == 6 && six.clamped.screenYawDeg[5] == 4, "the sixth screen's own move is kept")
 
     let back = try? JSONDecoder().decode(SpaceSettings.self, from: JSONEncoder().encode(SpaceSettings()))
     check(back == SpaceSettings(), "a round trip keeps every value")

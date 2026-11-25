@@ -2,6 +2,21 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## 0.5.11
+
+Details: [docs/release-notes-0.5.11.md](docs/release-notes-0.5.11.md).
+
+- **Up to six screens, from three** (one constant, ScreenLimit.most). Settings, Space, Screens and the menu go from 1
+  to 6; the default stays 2. Layouts for 4 to 6: the row (Four to Six across, narrowed so it never goes round past
+  179 degrees), Two rows (Stacked with 4 or more), Main + a column of up to five, and Theater with flanks further out,
+  left then right. The displays on the Mac are laid out the same way.
+- **Six hosts for the phone's PC screens** instead of three: new bases 53989, 54989 and 55989, six mDNS names. Each
+  virtual screen is still made only when the phone asks for it.
+- **PC screens from a Windows PC**: up to six Apollos; without mDNS, ports past 49989 are tried only while the one
+  before answers.
+- Checked with the core checks (every layout, 1 to 6 screens) and compiled on the Intel Air. Not yet run live with
+  more than three screens: not in the glasses, and not with more than three PC screens streaming to the phone.
+
 ## 0.5.10
 
 Details: [docs/release-notes-0.5.10.md](docs/release-notes-0.5.10.md).

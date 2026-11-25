@@ -113,7 +113,7 @@ struct ControlPanelMapCard: View {
     @ObservedObject var state: AppState
     let actions: SettingsActionsRef
 
-    /// One screen more or fewer, 1 to 3. Displays made twice in one session mislead capture, so with the glasses
+    /// One screen more or fewer, 1 to 6 (SpaceSettings.screensRange). Displays made twice in one session mislead capture, so with the glasses
     /// in, Pocket XR starts again to make the new set; with none in, the number is simply kept for next time.
     private func setScreens(_ n: Int) {
         let range = SpaceSettings.screensRange

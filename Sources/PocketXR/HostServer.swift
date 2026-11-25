@@ -5,15 +5,17 @@ import CoreVideo
 import PocketXRCore
 
 /// Pocket XR for Mac as a streaming host that Moonlight's protocol reaches (as Sunshine and Apollo are), so the phone
-/// shows this Mac's screens with nothing else installed: one instance per PC screen (up to three), each on its own
+/// shows this Mac's screens with nothing else installed: one instance per PC screen (up to six, ScreenLimit.most),
+/// each on its own
 /// ports and its own virtual display at the phone window's shape. Ported from Pocket XR for Windows' host (HostServer,
 /// HostWeb), itself ported in part from Sunshine and Apollo (GPLv3).
 ///
 /// Ports from the base (HTTP) port P, as Sunshine lays them out: HTTPS P-5, video P+9, control P+10, sound P+11, RTSP
-/// P+21. Bases 50989, 51989, 52989: clear of a Sunshine's 47989, 48989, 49989.
+/// P+21. Bases 50989, 51989, 52989 and on, 1000 apart (55989 for the sixth): clear of a Sunshine's 47989, 48989,
+/// 49989. Every instance runs while the host is on; the phone streams from the ones it asks for.
 final class HostServer: @unchecked Sendable {
     static let desktopAppId = 1
-    static let basePorts = [50989, 51989, 52989]
+    static let basePorts = (0..<ScreenLimit.most).map { 50989 + 1000 * $0 }
 
     let index: Int
     let httpPort, httpsPort, videoPort, controlPort, audioPort, rtspPort: Int

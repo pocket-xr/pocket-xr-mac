@@ -8,14 +8,21 @@ public enum TrackingMode: String, Codable, CaseIterable, Sendable {
     case smoothFollow
 }
 
-/// How 1 to 3 screens are placed. Every case works for any count: with one screen `row` is "Center" and the two
+/// The most screens Pocket XR for Mac makes, in one place: the floating screens in the glasses (Settings, Screens)
+/// and the screens it hosts for the phone's PC screens (one host, one set of ports and one virtual display each).
+/// It was 3 up to 0.5.10; the default stays 2 floating screens, and the phone uses only the hosts it asks for.
+public enum ScreenLimit {
+    public static let most = 6
+}
+
+/// How 1 to 6 screens are placed. Every case works for any count: with one screen `row` is "Center" and the two
 /// "main" layouts fall back to it.
 public enum ArrangeLayout: String, Codable, CaseIterable, Sendable {
-    /// Side by side on an arc (Center, Side by side, Three across).
+    /// Side by side on an arc (Center, Side by side, Three across ... Six across).
     case row
-    /// The first screen large in front, the others smaller beside it (Main + side, Main + two stacked).
+    /// The first screen large in front, the others smaller beside it (Main + side, Main + two stacked ...).
     case mainSide
-    /// One above the other.
+    /// One above the other (with more than three screens, two rows).
     case stacked
     /// Far away and large, like a cinema screen (the others beside it).
     case theater
@@ -162,7 +169,7 @@ public struct ReadabilityBefore: Codable, Equatable, Sendable {
 /// file, Restore) and what UserDefaults holds. A missing field in an older file takes its default.
 public struct SpaceSettings: Codable, Equatable, Sendable {
     // The Space
-    /// Virtual displays, 1 to 3. Takes effect when Pocket XR starts.
+    /// Virtual displays, 1 to 6 (ScreenLimit.most). Takes effect when Pocket XR starts.
     public var screens = 2
     public var layout = ArrangeLayout.row
     /// Each screen's width as seen, degrees.
@@ -260,7 +267,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
 
     public init() {}
 
-    public static let screensRange = 1...3
+    public static let screensRange = 1...ScreenLimit.most
     public static let widthRange = 15.0...100.0
     public static let distanceRange = 0.5...6.0
     public static let curveRange = 0.0...2.5
