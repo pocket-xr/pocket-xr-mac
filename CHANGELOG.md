@@ -10,12 +10,15 @@ Details: [docs/release-notes-0.5.11.md](docs/release-notes-0.5.11.md).
   to 6; the default stays 2. Layouts for 4 to 6: the row (Four to Six across, narrowed so it never goes round past
   179 degrees), Two rows (Stacked with 4 or more), Main + a column of up to five, and Theater with flanks further out,
   left then right. The displays on the Mac are laid out the same way.
-- **Six hosts for the phone's PC screens** instead of three: new bases 53989, 54989 and 55989, six mDNS names. Each
-  virtual screen is still made only when the phone asks for it.
+- **Screens for your phone** (Settings, Pocket XR), 1 to 6, default 3: only that many hosts run and are announced
+  by mDNS; hosts 4 to 6 on bases 53989, 54989 and 55989. Takes effect without a restart; a host whose phone is
+  streaming takes no new stream and stops when that stream ends. Each virtual screen is still made only when the
+  phone asks for it. `PocketXR --host --host-screens N` sets it for the headless host.
 - **PC screens from a Windows PC**: up to six Apollos; without mDNS, ports past 49989 are tried only while the one
   before answers.
-- Checked with the core checks (every layout, 1 to 6 screens) and compiled on the Intel Air. Not yet run live with
-  more than three screens: not in the glasses, and not with more than three PC screens streaming to the phone.
+- Checked with the core checks (every layout, 1 to 6 screens; starting and stopping hosts) and compiled on the Intel
+  Air. Not yet run live with more than three screens: not in the glasses, and not with more than three PC screens
+  streaming to the phone. Changing the phone's number while it streams is untried.
 
 ## 0.5.10
 

@@ -884,6 +884,13 @@ struct SettingsHelpPane: View {
                 isOn: $store.s.stayAwakeOnAdapter
             )
             SettingsDivider()
+            SettingsRow(
+                "Screens for your phone",
+                note: "How many of this Mac's screens Pocket XR on your phone can show at once. Changes at once; a screen your phone is showing stays until it closes it."
+            ) {
+                SettingsSegmented(selection: $store.s.phoneScreens, values: Array(HostOffer.range), label: "Screens for your phone") { n in "\(n)" }
+            }
+            SettingsDivider()
             SettingsRow("Version", note: "Free and open source, GPL-3.0.") {
                 Text(state.version)
                     .font(Font.system(size: 14, weight: .regular).monospacedDigit())

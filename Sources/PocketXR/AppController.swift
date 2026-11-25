@@ -124,6 +124,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         taps.onTaps = { [weak self] n in self?.glassesTapped(n) }
         taps.setSensitivity(store.s.tapSensitivity)
         taps.enabled = store.s.glassesTaps
+        host.setScreens(store.s.phoneScreens)
         if UserDefaults.standard.object(forKey: Self.hostKey) as? Bool ?? true {
             host.start()
             // Moving over from the separate PC helper app: asked once; the menu offers it after that.
@@ -444,6 +445,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if old.shortcuts != new.shortcuts { registerShortcuts() }
         if old.launchAtLogin != new.launchAtLogin { setLaunchAtLogin(new.launchAtLogin) }
         if old.stayAwakeOnAdapter != new.stayAwakeOnAdapter { StayAwake.set(new.stayAwakeOnAdapter) }
+        if old.phoneScreens != new.phoneScreens { host.setScreens(new.phoneScreens) }
         if old.tapSensitivity != new.tapSensitivity {
             taps.setSensitivity(new.tapSensitivity)
             plog("tap sensitivity: \(Int(new.tapSensitivity.rounded()))%")

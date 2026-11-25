@@ -80,6 +80,32 @@ public enum PcScreenPick {
     }
 }
 
+/// This Mac as the PC end of the phone's PC screens: how many screens it offers a phone (Settings, Pocket XR,
+/// "Screens for your phone") and which host instances that starts and stops. Hosts are numbered from 1; host k's
+/// HTTP port is 50989 + 1000 (k - 1), clear of a Sunshine's 47989, 48989, 49989.
+public enum HostOffer {
+    /// Three, as every version up to 0.5.10 offered.
+    public static let defaultCount = 3
+    public static let range = 1...ScreenLimit.most
+    public static let firstPort = 50989
+    /// Every host's base (HTTP) port, up to ScreenLimit.most.
+    public static let basePorts = (0..<ScreenLimit.most).map { firstPort + 1000 * $0 }
+
+    /// What to do so [wanted] hosts run, from the hosts [running] now and those of them [streaming]: [start] the
+    /// missing ones up to [wanted]; [stop] the ones above it at once; a streaming one above it is never cut, it is
+    /// [waiting] and stops once its stream ends (the plan is made again then).
+    public static func plan(running: [Int], streaming: Set<Int>, wanted: Int) -> (start: [Int], stop: [Int], waiting: [Int]) {
+        let n = min(max(wanted, range.lowerBound), range.upperBound)
+        let have = Set(running)
+        let start = (1...n).filter { !have.contains($0) }
+        let above = running.filter { $0 > n }.sorted()
+        return (start, above.filter { !streaming.contains($0) }, above.filter { streaming.contains($0) })
+    }
+
+    /// Whether host [index] takes a new stream when [offered] screens are offered (one winding down does not).
+    public static func takesStreams(_ index: Int, offered: Int) -> Bool { index >= 1 && index <= offered }
+}
+
 /// The Pocket XR PC helper's protocol (port 47610; its source is pc-helper/PocketXrPcHelper.cs in the Android repo).
 public enum PcHelperWire {
     public static let port: UInt16 = 47610

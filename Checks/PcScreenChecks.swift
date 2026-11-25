@@ -23,6 +23,34 @@ func pcScreenChecks() {
     check(PcHostAddress.parse("pc:0") == nil && PcHostAddress.parse("pc:x") == nil && PcHostAddress.parse("a:1:2") == nil, "bad ports")
     check(PcHost(name: "M", address: "10.0.0.2", port: 47989).moonlightAddress == "10.0.0.2", "the usual port is left out")
     check(PcHostAddress.ports(3) == [47989, 48989, 49989] && PcHostAddress.ports(6).last == 52989, "Apollo ports 1000 apart")
+
+    // Screens this Mac offers a phone: the hosts to start and stop.
+    check(HostOffer.basePorts == [50989, 51989, 52989, 53989, 54989, 55989], "host ports: 50989 and on, 1000 apart, six")
+    check(HostOffer.defaultCount == 3 && SpaceSettings().phoneScreens == 3, "three screens offered by default, as before")
+    let fresh = HostOffer.plan(running: [], streaming: [], wanted: 3)
+    check(fresh.start == [1, 2, 3] && fresh.stop.isEmpty && fresh.waiting.isEmpty, "offer: three hosts start")
+    let up = HostOffer.plan(running: [1, 2, 3], streaming: [2], wanted: 6)
+    check(up.start == [4, 5, 6] && up.stop.isEmpty, "offer: raised to six, only the new ones start")
+    let down = HostOffer.plan(running: [1, 2, 3, 4, 5], streaming: [1, 4], wanted: 2)
+    check(down.start.isEmpty && down.stop == [3, 5] && down.waiting == [4], "offer: lowered, an idle host stops, a streaming one waits")
+    let after = HostOffer.plan(running: [1, 2, 4], streaming: [1], wanted: 2)
+    check(after.stop == [4] && after.waiting.isEmpty, "offer: its stream over, the waiting host stops")
+    let same = HostOffer.plan(running: [1, 2, 3], streaming: [], wanted: 3)
+    check(same.start.isEmpty && same.stop.isEmpty && same.waiting.isEmpty, "offer: nothing to do")
+    check(HostOffer.plan(running: [], streaming: [], wanted: 0).start == [1] && HostOffer.plan(running: [], streaming: [], wanted: 9).start.count == 6,
+          "offer: held to 1 to 6")
+    check(HostOffer.takesStreams(2, offered: 2) && !HostOffer.takesStreams(3, offered: 2) && !HostOffer.takesStreams(0, offered: 6),
+          "offer: a host above the number offered takes no new stream")
+    var offerSettings = SpaceSettings()
+    offerSettings.phoneScreens = 0
+    check(offerSettings.clamped.phoneScreens == 1, "screens for the phone held to at least 1")
+    offerSettings.phoneScreens = 8
+    check(offerSettings.clamped.phoneScreens == 6, "screens for the phone held to at most 6")
+    let oldFile = try? JSONDecoder().decode(SpaceSettings.self, from: Data(#"{"screens": 2}"#.utf8))
+    check(oldFile?.phoneScreens == 3, "an older settings file offers three")
+    offerSettings.phoneScreens = 5
+    let roundTrip = try? JSONDecoder().decode(SpaceSettings.self, from: JSONEncoder().encode(offerSettings))
+    check(roundTrip?.phoneScreens == 5, "screens for the phone saved and read back")
     check(PcHost(name: "M", address: "10.0.0.2", port: 48989).moonlightAddress == "10.0.0.2:48989", "another port is given")
 
     // PCs and their Apollos.

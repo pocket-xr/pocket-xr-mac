@@ -229,7 +229,8 @@ final class HostHelper: @unchecked Sendable {
             plog("host: the phone gave its PIN for the host on \(port): \(ok ? (waiting ? "taken" : "kept for its pairing") : "no such host")")
             return ok ? encode(["ok": true]) : encode(["ok": false, "why": "no Pocket XR host on port \(port)"])
         case "screen-prepare":
-            guard let port = Self.number(req["port"]), let i = HostServer.basePorts.firstIndex(of: port) else {
+            guard let port = Self.number(req["port"]), let i = HostServer.basePorts.firstIndex(of: port),
+                  HostOffer.takesStreams(i + 1, offered: shared.offered) else {
                 return encode(["ok": false, "why": "no such screen"])
             }
             let mode = HostScreens.Mode.clamped(Self.number(req["width"]) ?? 1920, Self.number(req["height"]) ?? 1080, Self.number(req["fps"]) ?? 60)
@@ -357,14 +358,49 @@ enum HostPermissions {
     }
 }
 
-/// Pocket XR for Mac as the PC end of the phone's PC screens: six host instances (ScreenLimit.most), the PC helper's
-/// words and the
+/// Pocket XR for Mac as the PC end of the phone's PC screens: as many host instances as Settings offers a phone (1 to
+/// 6, HostOffer), the PC helper's words and the
 /// virtual screens, started and stopped together.
 final class HostService: @unchecked Sendable {
     private(set) var shared: HostShared?
     private var hosts: [HostServer] = []
     private var helper: HostHelper?
     var isOn: Bool { shared != nil }
+    /// How many screens are offered to a phone (Settings); kept while the host is off. Main thread.
+    private(set) var offered = HostOffer.defaultCount
+
+    /// Offers [n] screens to a phone: hosts are started or stopped to match at once, except that a host whose phone
+    /// is streaming stops only when that stream ends. Main thread.
+    func setScreens(_ n: Int) {
+        let to = min(max(n, HostOffer.range.lowerBound), HostOffer.range.upperBound)
+        guard to != offered else { return }
+        plog("host: screens offered to a phone \(offered) -> \(to)")
+        offered = to
+        shared?.offered = to
+        matchOffer()
+    }
+
+    /// Starts and stops hosts so [offered] run (HostOffer.plan). Main thread.
+    private func matchOffer() {
+        guard let s = shared else { return }
+        let streaming = Set(hosts.filter { $0.sessionRunning }.map(\.index))
+        let plan = HostOffer.plan(running: hosts.map(\.index), streaming: streaming, wanted: offered)
+        for i in plan.stop {
+            guard let h = hosts.first(where: { $0.index == i }) else { continue }
+            h.onSessionEnded = nil
+            h.stop()
+            hosts.removeAll { $0 === h }
+            plog("host \(i): stopped (not offered now)")
+        }
+        for i in plan.start {
+            let h = HostServer(index: i, shared: s)
+            h.onSessionEnded = { [weak self] in DispatchQueue.main.async { self?.matchOffer() } }
+            h.start()
+            hosts.append(h)
+        }
+        hosts.sort { $0.index < $1.index }
+        if !plan.waiting.isEmpty { plog("host: \(plan.waiting.map { "host \($0)" }.joined(separator: ", ")) stops when its stream ends") }
+    }
 
     func start() {
         guard shared == nil else { return }
@@ -376,19 +412,20 @@ final class HostService: @unchecked Sendable {
         shared = s
         s.pins.ask = { port in Self.askPin(port: port) }
         s.pins.dismiss = { Self.closePinBox() }
-        hosts = (1...HostServer.basePorts.count).map { HostServer(index: $0, shared: s) }
-        hosts.forEach { $0.start() }
+        s.offered = offered
+        hosts = []
+        matchOffer()
         readNetworkWake()
         let h = HostHelper(shared: s)
         h.start()
         helper = h
         s.pins.phoneGivesPin = { [weak h] in h?.running == true }
         plog("host: Screen Recording \(CGPreflightScreenCaptureAccess() ? "allowed" : "not allowed"), Accessibility \(AXIsProcessTrusted() ? "allowed" : "not allowed")")
-        plog("host: \(name) ready (id \(s.identity.uniqueId), \(s.clients.count) paired, H.264\(s.hasHevc ? ", HEVC" : ""), TLS \(s.identity.identity != nil ? "ready" : "missing"))")
+        plog("host: \(name) ready, \(hosts.count) screen(s) offered (id \(s.identity.uniqueId), \(s.clients.count) paired, H.264\(s.hasHevc ? ", HEVC" : ""), TLS \(s.identity.identity != nil ? "ready" : "missing"))")
     }
 
     func stop() {
-        hosts.forEach { $0.stop() }
+        hosts.forEach { $0.onSessionEnded = nil; $0.stop() }
         hosts = []
         helper?.stop()
         helper = nil
