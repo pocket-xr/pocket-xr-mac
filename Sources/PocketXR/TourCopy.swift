@@ -97,7 +97,7 @@ enum TourCopy {
     static let loginLine = "Pocket XR starts when you log in to your Mac."
 
     // 3. Your screens are real displays
-    static let screensBody = "macOS sees one to three extra displays, to the right of your own screen. Full screen and Mission Control work on them as on any display."
+    static let screensBody = "macOS sees one to six extra displays, to the right of your own screen. Full screen and Mission Control work on them as on any display."
     static let screensPointer = "Move the pointer off the right edge of your Mac's screen. It is now on the first floating screen."
     static let screensDrag = "Drag a window onto a floating screen."
     static let screensCount = "Change how many screens you have in Settings. It takes effect when Pocket XR opens again."

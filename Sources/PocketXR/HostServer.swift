@@ -5,15 +5,17 @@ import CoreVideo
 import PocketXRCore
 
 /// Pocket XR for Mac as a streaming host that Moonlight's protocol reaches (as Sunshine and Apollo are), so the phone
-/// shows this Mac's screens with nothing else installed: one instance per PC screen (up to three), each on its own
+/// shows this Mac's screens with nothing else installed: one instance per PC screen (up to six, ScreenLimit.most),
+/// each on its own
 /// ports and its own virtual display at the phone window's shape. Ported from Pocket XR for Windows' host (HostServer,
 /// HostWeb), itself ported in part from Sunshine and Apollo (GPLv3).
 ///
 /// Ports from the base (HTTP) port P, as Sunshine lays them out: HTTPS P-5, video P+9, control P+10, sound P+11, RTSP
-/// P+21. Bases 50989, 51989, 52989: clear of a Sunshine's 47989, 48989, 49989.
+/// P+21. Bases 50989, 51989, 52989 and on, 1000 apart (55989 for the sixth): clear of a Sunshine's 47989, 48989,
+/// 49989. Only as many run as Settings offers a phone (HostOffer, 3 by default); HostService starts and stops them.
 final class HostServer: @unchecked Sendable {
     static let desktopAppId = 1
-    static let basePorts = [50989, 51989, 52989]
+    static let basePorts = HostOffer.basePorts
 
     let index: Int
     let httpPort, httpsPort, videoPort, controlPort, audioPort, rtspPort: Int
@@ -24,6 +26,8 @@ final class HostServer: @unchecked Sendable {
     private let lock = NSLock()
     private var session: Session?
     private var pairings: [String: Pairing] = [:]
+    /// Called (on any thread) when a stream has ended, so a host no longer offered can stop then.
+    var onSessionEnded: (() -> Void)?
 
     final class Session {
         var width = 1920, height = 1080, fps = 60
@@ -322,6 +326,11 @@ final class HostServer: @unchecked Sendable {
         }
         // No Screen Recording: refused at once with a clear reason (the phone says it), and one message on the Mac,
         // instead of a stream that never sends a picture and a virtual screen that comes and goes with each retry.
+        // A host above the number of screens offered is only waiting for its last stream to end: no new one.
+        if !HostOffer.takesStreams(index, offered: shared.offered) {
+            plog("host \(index): launch refused: this Mac offers \(shared.offered) screen(s) now")
+            return .failure(Refusal(text: "This Mac offers fewer screens now. Pocket XR on the Mac, Settings, Screens for your phone."))
+        }
         if !HostPermissions.screenAllowed {
             plog("host \(index): launch refused: Pocket XR is not allowed to record the screen")
             HostPermissions.show(because: "Your phone tried to show this Mac's screen.")
@@ -351,8 +360,10 @@ final class HostServer: @unchecked Sendable {
 
     func endSession(_ why: String) {
         lock.lock()
+        let had = session != nil
         if let s = session { stopLocked(s, why); session = nil }
         lock.unlock()
+        if had { onSessionEnded?() }
     }
 
     private func stopLocked(_ s: Session, _ why: String) {
@@ -582,6 +593,13 @@ final class HostShared: @unchecked Sendable {
     let screens = HostScreens()
     let pins = HostPins()
     let hasHevc: Bool
+    private let offerLock = NSLock()
+    private var offeredCount = HostOffer.defaultCount
+    /// How many screens are offered to a phone now (Settings); hosts above it take no new stream.
+    var offered: Int {
+        get { offerLock.lock(); defer { offerLock.unlock() }; return offeredCount }
+        set { offerLock.lock(); offeredCount = newValue; offerLock.unlock() }
+    }
     let maxFps: Int
 
     init?(name: String) {

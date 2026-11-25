@@ -29,7 +29,7 @@ struct SettingsSpacePane: View {
         let count: Int = store.s.screens
         return SettingsCard("Screens") {
             SettingsRow("Screens", note: "Takes effect when Pocket XR opens again.") {
-                SettingsSegmented(selection: $store.s.screens, values: [1, 2, 3], label: "Screens") { n in "\(n)" }
+                SettingsSegmented(selection: $store.s.screens, values: Array(SpaceSettings.screensRange), label: "Screens") { n in "\(n)" }
             }
             if state.needsRestart {
                 SettingsDivider()
@@ -883,6 +883,13 @@ struct SettingsHelpPane: View {
                 note: "So your phone can reach this Mac from anywhere, over Tailscale or the like, without waking it. While plugged in, this Mac does not sleep when left idle; its screen still can. Uses some power. Closing a MacBook's lid still sleeps it, unless a display is connected. On battery it sleeps as usual.",
                 isOn: $store.s.stayAwakeOnAdapter
             )
+            SettingsDivider()
+            SettingsRow(
+                "Screens for your phone",
+                note: "How many of this Mac's screens Pocket XR on your phone can show at once. Changes at once; a screen your phone is showing stays until it closes it."
+            ) {
+                SettingsSegmented(selection: $store.s.phoneScreens, values: Array(HostOffer.range), label: "Screens for your phone") { n in "\(n)" }
+            }
             SettingsDivider()
             SettingsRow("Version", note: "Free and open source, GPL-3.0.") {
                 Text(state.version)

@@ -3,7 +3,7 @@ import CoreGraphics
 import CVirtualDisplay
 import PocketXRCore
 
-/// The screens the Mac's apps live on while Pocket XR runs: 1 to 3 virtual displays, each 1920x1080 at 60 Hz
+/// The screens the Mac's apps live on while Pocket XR runs: 1 to 6 virtual displays (ScreenLimit.most), each 1920x1080 at 60 Hz
 /// (1440x810 with Readability on).
 ///
 /// Every use of CoreGraphics' private virtual display classes is here. They are made once per session and never

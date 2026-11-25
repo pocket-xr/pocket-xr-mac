@@ -50,9 +50,10 @@ func layoutChecks() {
     let arrangedRow = SpaceLayout.arrange(layout: .row, aspects: [wide, wide, wide], widthDeg: 40, distance: 1.4, curve: 0)
     check(arrangedRow == row3, "arrange: the row layout is the row")
 
-    // Every layout, 1 to 3 screens, narrow to wide: the right count, no overlap, centred, inside 35 degrees.
+    // Every layout, 1 to 6 screens, narrow to wide: the right count, no overlap, centred, inside 35 degrees up and
+    // down and 179 round.
     for layout in ArrangeLayout.allCases {
-        for count in 1...3 {
+        for count in 1...ScreenLimit.most {
             for width in [15.0, 40.0, 70.0, 100.0] {
                 let aspects = [Double](repeating: wide, count: count)
                 let panels = SpaceLayout.arrange(layout: layout, aspects: aspects, widthDeg: width, distance: 1.4, curve: 0)
@@ -70,6 +71,8 @@ func layoutChecks() {
                 let limit = SpaceLayout.maxPitchDeg + 1e-6
                 let inside = panels.allSatisfy { abs($0.pitchDeg) + $0.heightDeg / 2 <= limit }
                 check(inside, "\(what): inside 35 degrees up and down")
+                let round = panels.allSatisfy { abs($0.yawDeg) + $0.widthDeg / 2 <= SpaceLayout.maxYawDeg + 1e-6 }
+                check(round, "\(what): inside 179 degrees either side")
             }
         }
     }
@@ -107,12 +110,38 @@ func layoutChecks() {
     // Fallbacks, curve, names.
     let one = SpaceLayout.arrange(layout: .mainSide, aspects: [wide], widthDeg: 40, distance: 1.4, curve: 1)
     check(one.count == 1 && near(one[0].yawDeg, 0) && one[0].curve == 1, "main + side with one screen is the row, curved")
-    let four = SpaceLayout.arrange(layout: .stacked, aspects: [wide, wide, wide, wide], widthDeg: 40, distance: 1.4, curve: 9)
-    check(four.count == 4 && four.allSatisfy { $0.pitchDeg == 0 && $0.curve == 2.5 }, "four screens fall back to the row; curve held to 2.5")
+    let seven = SpaceLayout.arrange(layout: .stacked, aspects: [Double](repeating: wide, count: 7), widthDeg: 40, distance: 1.4, curve: 9)
+    check(seven.count == 7 && seven.allSatisfy { $0.pitchDeg == 0 && $0.curve == 2.5 }, "seven screens fall back to the row; curve held to 2.5")
+
+    // Four to six screens.
+    let row6 = SpaceLayout.arrange(layout: .row, aspects: [Double](repeating: wide, count: 6), widthDeg: 40, distance: 1.4, curve: 0)
+    check(near(row6[0].yawDeg, 105) && near(row6[5].yawDeg, -105) && row6.allSatisfy { near($0.widthDeg, 40) }, "six across: 40 degrees each, 105 out")
+    let row6wide = SpaceLayout.row(aspects: [Double](repeating: wide, count: 6), widthDeg: 100, distance: 1.4)
+    check(near(row6wide[0].widthDeg, 58) && near(row6wide[0].yawDeg + row6wide[0].widthDeg / 2, 179), "six across at 100: narrowed to 58, 179 round")
+    let row3wide = SpaceLayout.row(aspects: [wide, wide, wide], widthDeg: 100, distance: 1.4)
+    check(row3wide.allSatisfy { near($0.widthDeg, 100) }, "three across at 100 degrees: not narrowed")
+    let st4 = SpaceLayout.arrange(layout: .stacked, aspects: [wide, wide, wide, wide], widthDeg: 40, distance: 1.4, curve: 0)
+    check(st4[0].pitchDeg > 0 && near(st4[0].pitchDeg, st4[1].pitchDeg) && near(st4[2].pitchDeg, -st4[0].pitchDeg)
+        && near(st4[2].pitchDeg, st4[3].pitchDeg), "two rows: the first two on top, the last two under them")
+    check(near(st4[0].yawDeg, -st4[1].yawDeg) && near(st4[0].yawDeg, st4[2].yawDeg) && near(st4[0].widthDeg, 40), "two rows: columns, full width")
+    let st5 = SpaceLayout.arrange(layout: .stacked, aspects: [Double](repeating: wide, count: 5), widthDeg: 40, distance: 1.4, curve: 0)
+    check(st5[0].pitchDeg > 0 && st5[3].pitchDeg < 0 && near(st5[1].yawDeg, 0) && near(st5[3].yawDeg, -st5[4].yawDeg), "two rows of five: three on top, two under")
+    let grid6 = DisplayGrid.origins(panels: SpaceLayout.arrange(layout: .stacked, aspects: [Double](repeating: wide, count: 6), widthDeg: 40, distance: 1.4, curve: 0),
+                                    sizes: [(width: Int, height: Int)](repeating: (width: 1920, height: 1080), count: 6))
+    check(grid6[0].x == 0 && grid6[3].x == 0 && grid6[3].y == grid6[0].y + 1080 && grid6[2].x == 3840, "display grid: two rows of three are three columns of two")
+    let th4 = SpaceLayout.arrange(layout: .theater, aspects: [wide, wide, wide, wide], widthDeg: 40, distance: 1.4, curve: 0)
+    check(th4[1].yawDeg > th4[0].yawDeg && th4[3].yawDeg > th4[1].yawDeg && th4[2].yawDeg < th4[0].yawDeg, "theater of four: two flanks left, one right")
+    check(near(th4[3].yawDeg - th4[1].yawDeg, 26) && near(th4[1].widthDeg, 24), "theater of four: the outer flank 26 degrees further out")
+    let ms6 = SpaceLayout.arrange(layout: .mainSide, aspects: [Double](repeating: wide, count: 6), widthDeg: 40, distance: 1.4, curve: 0)
+    check(ms6[1..<6].allSatisfy { near($0.yawDeg, ms6[1].yawDeg) } && ms6[1].pitchDeg > ms6[5].pitchDeg, "main + five stacked: one column, top down")
     check(SpaceLayout.arrange(layout: .theater, aspects: [], widthDeg: 40, distance: 1.4, curve: 0).isEmpty, "no screens, no placements")
     check(SpaceLayout.choices(count: 1) == [.row, .theater], "choices for one screen")
     check(SpaceLayout.choices(count: 2) == [.row, .mainSide, .stacked, .theater], "choices for two screens")
     check(SpaceLayout.choices(count: 3) == [.row, .mainSide, .stacked, .theater], "choices for three screens")
+    check(SpaceLayout.choices(count: 6) == [.row, .mainSide, .stacked, .theater], "choices for six screens")
+    check(SpaceLayout.title(.row, count: 4) == "Four across" && SpaceLayout.title(.row, count: 6) == "Six across"
+        && SpaceLayout.title(.mainSide, count: 5) == "Main + four stacked" && SpaceLayout.title(.stacked, count: 3) == "Stacked"
+        && SpaceLayout.title(.stacked, count: 4) == "Two rows", "titles for four to six")
     check(SpaceLayout.title(.row, count: 1) == "Center" && SpaceLayout.title(.row, count: 2) == "Side by side"
         && SpaceLayout.title(.row, count: 3) == "Three across", "row titles")
     check(SpaceLayout.title(.mainSide, count: 2) == "Main + side" && SpaceLayout.title(.mainSide, count: 3) == "Main + two stacked",

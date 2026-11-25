@@ -23,7 +23,7 @@ opening. Public text must say so plainly, without claiming people asked for it.
 ## How it works
 
 ```
- Mac apps live on 1-3 virtual displays (CGVirtualDisplay)
+ Mac apps live on 1-6 virtual displays (CGVirtualDisplay)
         │  macOS treats them as real monitors: windows, full screen, Mission Control all work
         ▼
  ScreenCaptureKit, one stream per virtual display (IOSurface frames, cursor included)
@@ -78,7 +78,7 @@ CGVirtualDisplay is private CoreGraphics API, used by DeskPad (MIT), BetterDispl
 Pocket XR declares the four classes it needs in its own header (`Sources/CVirtualDisplay`) and keeps every use in
 one file (`VirtualDisplays.swift`), so a macOS change breaks one place.
 
-- 1 to 3 displays, each 1920x1080 at 60 Hz, HiDPI off by default (the glasses' pixels are about 1920x1080 per eye,
+- 1 to 6 displays (3 up to 0.5.10), each 1920x1080 at 60 Hz, HiDPI off by default (the glasses' pixels are about 1920x1080 per eye,
   so HiDPI would only cost speed). A "Sharper text" option can turn HiDPI on later.
 - Created once per session, never added or removed while running: Apple bug FB17797423 makes a new capture stream
   pick the wrong display after a virtual display is reconnected, and careless create/destroy can corrupt the display
@@ -144,7 +144,7 @@ Steady mode (the Aura holds the picture in 6DoF) follows in phase 2, again as on
 A menu bar app (no Dock icon), Pocket XR's look ("Light on glass"):
 
 - **Status:** glasses name, head tracking state, glasses picture size and fps.
-- **Recentre** (also Control-Option-R from anywhere), **Screens 1 / 2 / 3**, **Smaller / Bigger**,
+- **Recentre** (also Control-Option-R from anywhere), **Screens 1 to 6**, **Smaller / Bigger**,
   **Nearer / Further**, **3D side by side** on or off, **Send logs to Mike**, **Quit**.
 - Settings are kept in UserDefaults.
 - The log goes to `~/Library/Logs/Pocket XR/pocket-xr.log`, with a size limit. Send logs makes a zip in Downloads

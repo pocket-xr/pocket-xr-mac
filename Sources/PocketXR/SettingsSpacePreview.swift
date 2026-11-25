@@ -389,7 +389,7 @@ struct SettingsSpaceCanvas: View, Animatable {
     }
 
     private var drawing: SettingsSpaceDrawing {
-        let count: Int = min(max(screens, 1), 3)
+        let count: Int = min(max(screens, 1), ScreenLimit.most)
         let aspects: [Double] = Array(repeating: 16.0 / 9.0, count: count)
         let placements: [PanelPlacement] = SpaceLayout.arrange(
             layout: layout,

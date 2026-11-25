@@ -88,6 +88,7 @@ if args.contains("--host") {
     Log.shared.echo = true
     _ = NSApplication.shared
     let service = HostService()
+    if let i = args.firstIndex(of: "--host-screens"), i + 1 < args.count, let n = Int(args[i + 1]) { service.setScreens(n) }
     service.start()
     if let i = args.firstIndex(of: "--seconds"), i + 1 < args.count, let s = Double(args[i + 1]) {
         DispatchQueue.main.asyncAfter(deadline: .now() + s) { service.stop(); exit(0) }
