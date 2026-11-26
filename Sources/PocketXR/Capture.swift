@@ -19,6 +19,9 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private var latestBuffer: CVPixelBuffer?
     private let queue: DispatchQueue
     private(set) var frames = 0
+    private var config: SCStreamConfiguration?
+    /// Whether macOS's pointer is in the picture: not while Pocket XR draws it itself (Quick pointer).
+    private var cursorShown = true
 
     init(displayID: CGDirectDisplayID, device: MTLDevice) {
         self.displayID = displayID
@@ -31,7 +34,8 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
 
     /// Starts capturing. A new virtual display can take a moment to show up in ScreenCaptureKit's list, so it looks
     /// for up to 5 s.
-    func start(width: Int, height: Int) async throws {
+    func start(width: Int, height: Int, hz: Int = 60) async throws {
+        let showsCursor = cursorShown
         var found: SCDisplay?
         for _ in 0..<10 {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -48,15 +52,37 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         cfg.width = width
         cfg.height = height
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
-        cfg.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+        cfg.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(30, hz)))
         cfg.queueDepth = 4
-        cfg.showsCursor = true
+        cfg.showsCursor = showsCursor
         cfg.capturesAudio = false
         let s = SCStream(filter: filter, configuration: cfg, delegate: self)
         try s.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
         try await s.startCapture()
         stream = s
-        plog("capture: display \(displayID) streaming \(width)x\(height)")
+        config = cfg
+        plog("capture: display \(displayID) streaming \(width)x\(height), up to \(hz) frames a second\(showsCursor ? "" : ", pointer left out")")
+        // Quick pointer turned on or off while the stream was starting.
+        if cursorShown != showsCursor {
+            let want = cursorShown
+            cursorShown = showsCursor
+            setShowsCursor(want)
+        }
+    }
+
+    /// Puts macOS's pointer into the picture or takes it out, on a running stream.
+    func setShowsCursor(_ on: Bool) {
+        guard on != cursorShown else { return }
+        cursorShown = on
+        // Not started yet: start() takes it from here.
+        guard let s = stream, let cfg = config else { return }
+        cfg.showsCursor = on
+        let id = displayID
+        Task {
+            do { try await s.updateConfiguration(cfg) } catch {
+                plog("capture: display \(id): the pointer could not be \(on ? "put back" : "left out"): \(error.localizedDescription)")
+            }
+        }
     }
 
     func stop() {

@@ -312,7 +312,7 @@ struct ControlPanelSpaceCard: View {
     var body: some View {
         SettingsCard {
             if state.steady {
-                Text("In Steady mode the glasses show your screens side by side on one flat picture. Change their size here. Turn Steady mode off for layouts, distance and curve.")
+                Text("In Steady mode the glasses show your screens side by side on one flat picture. Change their size here. Turn Steady mode off for 3D, layouts, distance and curve.")
                     .font(Font.lookNote)
                     .foregroundColor(Color.lookInk2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -405,7 +405,8 @@ struct ControlPanelSpaceCard: View {
 
     private var switches: some View {
         HStack(alignment: .center, spacing: 0) {
-            ControlPanelSwitch(title: "3D", isOn: $store.s.want3D, enabled: true)
+            // The glasses hold one flat picture in Steady mode (Ultrawide is a 2D mode), so 3D waits until it is off.
+            ControlPanelSwitch(title: "3D", isOn: $store.s.want3D, enabled: !state.steady)
             Rectangle()
                 .fill(Color.white.opacity(0.08))
                 .frame(width: 1, height: 24)

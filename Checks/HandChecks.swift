@@ -148,6 +148,16 @@ private func handPointChecks() {
     check(!HandPalm.facesCamera(handMade(side: .right, palm: false)), "hands: the back of a right hand does not")
     check(HandPalm.facesCamera(handMade(side: .left, palm: true)), "hands: left palm faces the camera")
     check(!HandPalm.facesCamera(handMade(side: .left, palm: false)), "hands: the back of a left hand does not")
+    // A camera that faces the person: the palm gestures want the back of the hand to it (palm to the face), so the
+    // palm a pointing, pinching hand shows that camera is a plain pinch (a developer's MacBook camera, November 2026).
+    for side in [HandSide.right, HandSide.left] {
+        let palmToCamera = handMade(side: side, palm: true), backToCamera = handMade(side: side, palm: false)
+        check(HandPalm.backToCamera(backToCamera) && !HandPalm.backToCamera(palmToCamera), "hands: the back of a \(side) hand to the camera")
+        check(!HandPalm.towardFace(palmToCamera, cameraFacesYou: true), "hands: facing camera, \(side) palm to it is a plain pinch")
+        check(HandPalm.towardFace(backToCamera, cameraFacesYou: true), "hands: facing camera, \(side) back of the hand to it is the palm pose")
+        check(HandPalm.towardFace(palmToCamera, cameraFacesYou: false), "hands: glasses' camera, \(side) palm to it is the palm pose")
+        check(!HandPalm.towardFace(backToCamera, cameraFacesYou: false), "hands: glasses' camera, \(side) back of the hand is a plain pinch")
+    }
     check(HandPalm.turn(handMade(side: .right, palm: true)) < -HandPalm.minOpen, "hands: a right palm turns against the clock with y down")
     var unknown = handMade(side: .right, palm: true)
     unknown.side = nil
@@ -156,6 +166,10 @@ private func handPointChecks() {
     edge.indexKnuckle = HandPoint(x: 0.501, y: 0.5)
     edge.littleKnuckle = HandPoint(x: 0.499, y: 0.5)
     check(!HandPalm.facesCamera(edge), "hands: a hand seen edge on counts neither way")
+    check(!HandPalm.backToCamera(edge) && !HandPalm.towardFace(edge, cameraFacesYou: true), "hands: edge on is no palm pose for a facing camera")
+    var unknownBack = handMade(side: .right, palm: false)
+    unknownBack.side = nil
+    check(!HandPalm.towardFace(unknownBack, cameraFacesYou: true), "hands: facing camera, a hand of unknown side never counts as the palm pose")
     check(HandPalm.facesCamera(handMade(side: .right, palm: true, aspect: 16.0 / 9)), "hands: the palm test holds in a wide picture")
 
     // The pinch measure is the same whatever the picture's shape, near or far.

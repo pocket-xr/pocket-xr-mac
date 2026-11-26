@@ -20,6 +20,9 @@ struct RenderOptions {
     /// One picture across the whole display even when it is 3840x1080: Steady mode, where the glasses show that
     /// picture as one wide flat canvas (Ultrawide), not as a left and a right eye.
     var mono = false
+    /// Quick pointer: the panel the pointer is on and where on it (u, v, width, height), and its picture.
+    var pointer: (panel: Int, rect: SIMD4<Float>)?
+    var pointerTexture: MTLTexture?
 }
 
 /// Draws the Space on the glasses: each screen a textured panel (flat or bent round the head), seen from the head's
@@ -32,6 +35,8 @@ final class Renderer {
     private let panelPipeline: MTLRenderPipelineState
     private let fadePipeline: MTLRenderPipelineState
     private let sampler: MTLSamplerState
+    /// Bound where no pointer is drawn, so the shader always has a texture there.
+    private let blank: MTLTexture
     /// Each placement's mesh, made once and kept until the placement changes.
     private var meshes = [MeshKey: Mesh]()
 
@@ -54,6 +59,8 @@ final class Renderer {
         var size: SIMD2<Float> // the panel's size in its own pixels, for the corners and the rim
         var hasTexture: Float
         var brightness: Float
+        var pointer: SIMD4<Float> = .zero // Quick pointer on this panel: u, v, width, height
+        var hasPointer: Float = 0
     }
 
     private struct FadeUniforms {
@@ -101,6 +108,11 @@ final class Renderer {
         s.tAddressMode = .clampToEdge
         guard let samp = device.makeSamplerState(descriptor: s) else { return nil }
         sampler = samp
+        let bd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        bd.usage = .shaderRead
+        guard let b = device.makeTexture(descriptor: bd) else { return nil }
+        b.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [UInt8](repeating: 0, count: 4), bytesPerRow: 4)
+        blank = b
     }
 
     /// The placement's mesh as a buffer of x, y, z, u, v per vertex (a triangle strip in head-centred space).
@@ -163,6 +175,12 @@ final class Renderer {
                     hasTexture: texture == nil ? 0 : 1,
                     brightness: Float(options.brightness)
                 )
+                let pointerHere = options.pointer?.panel == index && options.pointerTexture != nil
+                if pointerHere, let spot = options.pointer {
+                    u.pointer = spot.rect
+                    u.hasPointer = 1
+                }
+                enc.setFragmentTexture(pointerHere ? options.pointerTexture : blank, index: 1)
                 enc.setVertexBuffer(mesh.buffer, offset: 0, index: 0)
                 enc.setVertexBytes(&u, length: MemoryLayout<PanelUniforms>.stride, index: 1)
                 enc.setFragmentBytes(&u, length: MemoryLayout<PanelUniforms>.stride, index: 1)
@@ -191,7 +209,8 @@ final class Renderer {
     using namespace metal;
 
     struct PanelVertexIn { packed_float3 position; packed_float2 uv; };
-    struct PanelUniforms { float4x4 mvp; float4 tint; float4 glow; float2 size; float hasTexture; float brightness; };
+    struct PanelUniforms { float4x4 mvp; float4 tint; float4 glow; float2 size; float hasTexture; float brightness;
+                           float4 pointer; float hasPointer; };
     struct PanelOut { float4 position [[position]]; float2 uv; };
 
     // The mesh is already in head-centred space; the picture's top left is uv (0, 0).
@@ -210,13 +229,22 @@ final class Renderer {
     }
 
     fragment float4 panelFragment(PanelOut in [[stage_in]], constant PanelUniforms &u [[buffer(1)]],
-                                  texture2d<float> tex [[texture(0)]], sampler s [[sampler(0)]]) {
+                                  texture2d<float> tex [[texture(0)]], texture2d<float> pointerTex [[texture(1)]],
+                                  sampler s [[sampler(0)]]) {
         float2 p = (in.uv - 0.5) * u.size;
         float d = roundedBox(p, u.size * 0.5, 22.0);
         // Smooth over about a pixel and a half of the panel, whatever its size on the display.
         float edge = max(fwidth(d), 0.75);
         float alpha = 1.0 - smoothstep(-edge, edge, d);
         float3 colour = u.hasTexture < 0.5 ? u.tint.rgb : tex.sample(s, in.uv).rgb * u.brightness;
+        // Quick pointer: its picture (alpha premultiplied) over the screen's.
+        if (u.hasPointer > 0.5) {
+            float2 pp = (in.uv - u.pointer.xy) / max(u.pointer.zw, float2(1e-6));
+            if (all(pp >= 0.0) && all(pp <= 1.0)) {
+                float4 c = pointerTex.sample(s, pp);
+                colour = colour * (1.0 - c.a) + c.rgb * u.brightness;
+            }
+        }
         // The focused screen: a thin rim of light at the edge, and a soft fall of it inward.
         float inside = max(-d, 0.0);
         float rim = (1.0 - smoothstep(2.0, 5.0, inside)) * 0.9 + exp(-inside / 26.0) * 0.28;
