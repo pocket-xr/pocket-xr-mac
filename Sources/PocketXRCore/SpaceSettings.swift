@@ -233,6 +233,9 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
     public var headScroll = false
     /// The pointer jumps to the screen you look at when it is on another screen.
     public var pointerFollowsHead = false
+    /// Quick pointer (PointerSpot): Pocket XR draws the pointer itself at each frame, instead of the one in the
+    /// captured picture. Off by default: not yet tried with glasses.
+    public var quickPointer = false
     /// Taps on the glasses' frame (GlassesTaps): two recentre, three switch the view. Off by default: not yet tried
     /// with real taps.
     public var glassesTaps = false
@@ -401,6 +404,7 @@ public struct SpaceSettings: Codable, Equatable, Sendable {
         displayDelayMs = try c.decodeIfPresent(Double.self, forKey: .displayDelayMs) ?? d.displayDelayMs
         headScroll = try c.decodeIfPresent(Bool.self, forKey: .headScroll) ?? d.headScroll
         pointerFollowsHead = try c.decodeIfPresent(Bool.self, forKey: .pointerFollowsHead) ?? d.pointerFollowsHead
+        quickPointer = try c.decodeIfPresent(Bool.self, forKey: .quickPointer) ?? d.quickPointer
         glassesTaps = try c.decodeIfPresent(Bool.self, forKey: .glassesTaps) ?? d.glassesTaps
         tapSensitivity = try c.decodeIfPresent(Double.self, forKey: .tapSensitivity) ?? d.tapSensitivity
         steadySixDof = try c.decodeIfPresent(Bool.self, forKey: .steadySixDof) ?? d.steadySixDof

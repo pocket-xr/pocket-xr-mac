@@ -2,6 +2,29 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## 0.5.12
+
+Details: [docs/release-notes-0.5.12.md](docs/release-notes-0.5.12.md). From a developer's report (XREAL 1S on a Mac).
+
+- **Faster than 60 frames a second.** The virtual displays were made at 60 Hz and captured at 60 frames a second
+  whatever the glasses could show, and the glasses' 3D mode was picked at 60 Hz before faster ones. Now the virtual
+  displays and their capture run at the glasses' fastest rate up to 120 Hz (StereoMode.screensHz, with 60 Hz offered
+  too), the 3D mode is picked at its highest rate up to 120 Hz (as on Android), and a display left at 60 Hz when the
+  same size is offered faster is switched (StereoMode.faster).
+- **Quick pointer** (Settings, Head tracking, off by default): Pocket XR draws the pointer itself at each frame from
+  where macOS says it is (PointerSpot, QuickPointer), and capture leaves macOS's own pointer out, so the pointer no
+  longer waits for screen capture.
+- **Settings in Steady mode**: the Space pane's Size and shape card showed the normal sizes in Steady mode, where they
+  do nothing; it now shows Steady mode's Size and Screen gap, as the control panel does. Layout says it is not used
+  there. 3D is greyed out in Steady mode (settings and control panel) with a note: Steady mode puts the glasses in
+  Ultrawide, one flat 32:9 picture, so the app draws it once; 3D comes back when Steady mode ends. Pointer follows head
+  is greyed out too (it never acted in Steady mode). `--render-ui` also draws three panes in Steady mode.
+- **Hands with a camera that faces you** (the Mac's own, a webcam): the launcher and recentre now want the palm to your
+  face, which for that camera is the back of the hand (HandPalm.towardFace). With "palm to the camera", the palm a
+  pinching hand shows that camera made pinch and hold recentre instead of dragging a window.
+- Checked with the core checks (1584 + new) and compiled on the Intel Air. Not yet tried with glasses: the faster
+  rates, Quick pointer, and the hand change with real hands.
+
 ## 0.5.11
 
 Details: [docs/release-notes-0.5.11.md](docs/release-notes-0.5.11.md).

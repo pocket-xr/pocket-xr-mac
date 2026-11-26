@@ -45,6 +45,9 @@ struct SettingsSpacePane: View {
                     SpaceLayout.title(layout, count: count)
                 }
             }
+            if state.steady {
+                SettingsNote(SettingsPanesText.steadyLayout)
+            }
             SettingsDivider()
             SettingsToggleRow(
                 "Sharper text",
@@ -75,6 +78,40 @@ struct SettingsSpacePane: View {
 
     private var shapeCard: some View {
         SettingsCard("Size and shape") {
+            if state.steady { steadyShape } else { shape }
+            SettingsDivider()
+            SettingsRow("Recentre", note: "Brings the screens in front of where you are looking now.") {
+                SettingsButton("Recentre", symbol: "scope", kind: .primary) {
+                    actions.target?.recentre()
+                }
+            }
+        }
+    }
+
+    /// In Steady mode the glasses hold one flat picture and the screens sit in a row on it: its own size and gap, as
+    /// on the control panel. (0.5.11 showed the sizes for normal tracking here in Steady mode too, and they did
+    /// nothing there: a developer with an XREAL 1S, "the display size only works on the main control panel".)
+    @ViewBuilder private var steadyShape: some View {
+        SettingsNote(SettingsPanesText.steadyShape)
+        SettingsDivider()
+        SettingsSliderRow(
+            "Size",
+            value: $store.s.steadyZoom,
+            range: SpaceSettings.steadyZoomRange,
+            step: 0.05,
+            valueText: "\(Int((store.s.steadyZoom * 100).rounded())) %"
+        )
+        SettingsDivider()
+        SettingsSliderRow(
+            "Screen gap",
+            value: $store.s.steadyGapDeg,
+            range: SpaceSettings.steadyGapRange,
+            step: 0.1,
+            valueText: String(format: "%.1f°", store.s.steadyGapDeg)
+        )
+    }
+
+    @ViewBuilder private var shape: some View {
             SettingsSliderRow(
                 "Size",
                 value: $store.s.widthDeg,
@@ -98,14 +135,15 @@ struct SettingsSpacePane: View {
                 step: 0.05,
                 valueText: SettingsFormat.curve(store.s.curve)
             )
-            SettingsDivider()
-            SettingsRow("Recentre", note: "Brings the screens in front of where you are looking now.") {
-                SettingsButton("Recentre", symbol: "scope", kind: .primary) {
-                    actions.target?.recentre()
-                }
-            }
-        }
     }
+}
+
+/// What the panes say about controls that Steady mode sets aside.
+enum SettingsPanesText {
+    static let steadyLayout = "Not used in Steady mode: the screens sit in a row on the glasses' flat picture."
+    static let steadyShape = "Steady mode is on: the glasses show your screens in a row on one flat picture. Size and Screen gap here change that row. Distance, Curve and Layout come back when Steady mode is off."
+    static let steady3D = "Not in Steady mode: the glasses hold one flat picture there, so 3D comes back when Steady mode is off."
+    static let steadyPointer = "Not in Steady mode."
 }
 
 /// The saved arrangements: use one, rename it, delete it, or save the Space as it is now.
@@ -280,8 +318,11 @@ struct SettingsPicturePane: View {
                     if state.glassesName != nil {
                         SettingsChip(state.stereo ? "3D" : "2D", lit: state.stereo)
                     }
-                    SettingsToggle(isOn: $store.s.want3D, label: "3D side by side")
+                    SettingsToggle(isOn: $store.s.want3D, label: "3D side by side", enabled: !state.steady)
                 }
+            }
+            if state.steady {
+                SettingsNote(SettingsPanesText.steady3D)
             }
             if let note = state.stereoNote {
                 SettingsNote(note, warn: true)
@@ -389,8 +430,16 @@ struct SettingsTrackingPane: View {
             SettingsDivider()
             SettingsToggleRow(
                 "Pointer follows head",
-                note: "The pointer jumps to the screen you look at when it is on another screen.",
-                isOn: $store.s.pointerFollowsHead
+                note: "The pointer jumps to the screen you look at when it is on another screen."
+                    + (state.steady ? " " + SettingsPanesText.steadyPointer : ""),
+                isOn: $store.s.pointerFollowsHead,
+                enabled: !state.steady
+            )
+            SettingsDivider()
+            SettingsToggleRow(
+                "Quick pointer",
+                note: "Pocket XR draws the pointer itself, so it moves as soon as your mouse does instead of a frame or more late. Not yet tried with glasses.",
+                isOn: $store.s.quickPointer
             )
             SettingsDivider()
             SettingsToggleRow(

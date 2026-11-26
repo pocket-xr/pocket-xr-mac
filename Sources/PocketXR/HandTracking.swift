@@ -431,7 +431,7 @@ final class HandTracking {
             }
             if preview.watching { preview.point = point }
             let motion: HandAngles = look ? HandAngles(yawDeg: state.yawDeg, pitchDeg: state.pitchDeg) : aim
-            input = HandInput(ratio: hand.pinchRatio, palmFacing: HandPalm.facesCamera(hand), aim: aim, motion: motion)
+            input = HandInput(ratio: hand.pinchRatio, palmFacing: HandPalm.towardFace(hand, cameraFacesYou: camera.facing), aim: aim, motion: motion)
         } else if preview.point != nil {
             preview.point = nil
         }

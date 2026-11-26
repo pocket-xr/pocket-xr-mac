@@ -20,6 +20,16 @@ enum SettingsRender {
                 written.append(url)
             }
         }
+        // In Steady mode some controls change or rest (settings-space-steady.png, ...).
+        let steady: AppState = sampleState()
+        steady.steady = true
+        steady.statusLine = "XREAL Aura · Steady mode"
+        for pane in [SettingsPane.space, .picture, .tracking] {
+            let url: URL = folder.appendingPathComponent("settings-\(pane.rawValue)-steady.png")
+            if render(pane, store: store, state: steady, actions: actions, to: url) {
+                written.append(url)
+            }
+        }
         return written
     }
 

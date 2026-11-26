@@ -154,6 +154,22 @@ public enum HandPalm {
         let t = turn(hand)
         return side == .right ? t < -minOpen : t > minOpen
     }
+
+    /// True when the back of the hand faces the camera, open (not edge on). A hand of unknown side never counts.
+    public static func backToCamera(_ hand: HandPoints, minOpen: Double = minOpen) -> Bool {
+        guard let side = hand.side else { return false }
+        let t = turn(hand)
+        return side == .right ? t > minOpen : t < -minOpen
+    }
+
+    /// The palm gestures' pose: the palm turned to your own face. With the glasses' camera, which looks out from your
+    /// face, that is the palm to the camera. With a camera that faces you (a Mac's own, or a webcam), it is the back
+    /// of the hand to the camera: a hand that points and pinches at the screens shows that camera its palm, so
+    /// 0.5.11's "palm to the camera" there made a pinch and hold recentre instead of grabbing a window (a developer
+    /// with an XREAL 1S and a MacBook's camera, November 2026).
+    public static func towardFace(_ hand: HandPoints, cameraFacesYou: Bool, minOpen: Double = minOpen) -> Bool {
+        cameraFacesYou ? backToCamera(hand, minOpen: minOpen) : facesCamera(hand, minOpen: minOpen)
+    }
 }
 
 /// A steady point on the hand to aim through (Android: SteadyAnchor, 0.5.9). The fingertips move when a pinch

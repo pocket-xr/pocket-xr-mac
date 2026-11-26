@@ -35,6 +35,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
     private var window: GlassesWindow?
     private var displays: VirtualDisplays?
     private var captures = [DisplayCapture]()
+    /// Quick pointer: the pointer drawn here at each frame, made on first use.
+    private lazy var quickPointer = QuickPointer(device: device)
     private var glasses: Glasses?
     private var fusion: HeadFusion?
     private var headPose: HeadPose?
@@ -397,7 +399,14 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             madeScreens = store.s.screens
             madeSharper = store.s.hiDPI
             madeWidth = store.s.screenSize.width
-            let d = VirtualDisplays(count: madeScreens, width: store.s.screenSize.width, height: store.s.screenSize.height, hiDPI: madeSharper)
+            // As fast as the glasses can show (their fastest mode at any size), so apps and the pointer are not held to 60.
+            var offered = [Double]()
+            if let g = glassesID {
+                let options = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+                offered = ((CGDisplayCopyAllDisplayModes(g, options) as? [CGDisplayMode]) ?? []).map(\.refreshRate)
+            }
+            let hz = StereoMode.screensHz(offered: offered)
+            let d = VirtualDisplays(count: madeScreens, width: store.s.screenSize.width, height: store.s.screenSize.height, hiDPI: madeSharper, hz: hz)
             displays = d
             recompute()
             d.arrange(glasses: glassesID, panels: placements)
@@ -406,10 +415,11 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             state.needsRestart = false
             for s in d.screens {
                 let c = DisplayCapture(displayID: s.id, device: device)
+                c.setShowsCursor(!store.s.quickPointer)
                 captures.append(c)
                 let scale = madeSharper ? 2 : 1
                 Task {
-                    do { try await c.start(width: s.width * scale, height: s.height * scale) } catch {
+                    do { try await c.start(width: s.width * scale, height: s.height * scale, hz: hz) } catch {
                         plog("capture: display \(s.id) did not start: \(error)")
                     }
                 }
@@ -441,6 +451,10 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         if old.readability != new.readability { plog(SpaceSettings.readabilityLine(from: old, to: new)) }
         if old.textScale != new.textScale {
             plog("text size: \(old.textScale)% -> \(new.textScale)%, display \(new.screenSize.width)x\(new.screenSize.height)\(new.hiDPI ? " HiDPI" : "") from the next start")
+        }
+        if old.quickPointer != new.quickPointer {
+            plog("quick pointer: \(new.quickPointer ? "on, drawn by Pocket XR" : "off, the one in the captured picture")")
+            captures.forEach { $0.setShowsCursor(!new.quickPointer) }
         }
         if old.shortcuts != new.shortcuts { registerShortcuts() }
         if old.launchAtLogin != new.launchAtLogin { setLaunchAtLogin(new.launchAtLogin) }
@@ -562,7 +576,12 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             drawnShape = shape
             plog("drawing: \(shape) (glasses report \(settingsState.stereo.map { "\($0)" } ?? "nothing") for 3D)")
         }
-        renderer.draw(drawable: drawable, head: head, panels: panels, options: renderOptions)
+        var options = renderOptions
+        if store.s.quickPointer, let d = displays {
+            options.pointer = quickPointer.spot(screens: d.screens.map(\.id))
+            options.pointerTexture = quickPointer.texture
+        }
+        renderer.draw(drawable: drawable, head: head, panels: panels, options: options)
     }
 
     /// Makes the glasses' display mode match their 2D / 3D state (see StereoMode): in 3D the glasses split the picture
@@ -601,9 +620,13 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
                 CGConfigureDisplayWithDisplayMode(config, id, list[i], nil)
                 r = CGCompleteDisplayConfiguration(config, .forSession)
             }
-            plog("3D: the glasses are side by side (\(why), glasses report \(settingsState.stereo.map { "\($0)" } ?? "nothing")) "
-                + "but the display is \(current?.text ?? "not known"): switching it to \(target): "
-                + (r == .success ? "done" : "refused (\(r.rawValue))"))
+            let result = r == .success ? "done" : "refused (\(r.rawValue))"
+            if let c = current, c.sideBySide == modes[i].sideBySide, c.pixelWidth == modes[i].pixelWidth, c.pixelHeight == modes[i].pixelHeight {
+                plog("glasses display: \(c.text) is offered faster (\(why)): switching it to \(target): \(result)")
+            } else {
+                plog("3D: the glasses are side by side (\(why), glasses report \(settingsState.stereo.map { "\($0)" } ?? "nothing")) "
+                    + "but the display is \(current?.text ?? "not known"): switching it to \(target): \(result)")
+            }
         case .cannot:
             guard stereoCannotCheck == nil else { return }
             // The display re-plugs on a 3D switch (about 4 s on the Aura), and its new modes can come late: look again.

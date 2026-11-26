@@ -135,7 +135,8 @@ struct HandsSettingsSection: View {
     // MARK: gestures
 
     private var gesturesCard: some View {
-        let palm: String = prefs.facing ? "Palm to the camera" : "Palm to your face"
+        // The same pose with either camera (HandPalm.towardFace): with a camera that faces you, the back of the hand to it.
+        let palm: String = prefs.facing ? "Palm to your face (back of the hand to the camera)" : "Palm to your face"
         let pointTitle: String = look ? "Look" : (air ? "Move your hand" : "Point")
         let pointNote: String = look
             ? "The pointer goes where you look while a hand is in view."
