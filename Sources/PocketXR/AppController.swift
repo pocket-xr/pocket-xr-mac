@@ -222,6 +222,8 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             return
         }
         glassesGoneSince = nil
+        unmirrorScreens()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in MainActor.assumeIsolated { self?.unmirrorScreens() } }
         if displaysWereRemoved, Bundle.main.bundleURL.pathExtension == "app" {
             // Virtual displays made a second time in one session mislead capture (FB17797423, see VirtualDisplays), so
             // the glasses coming back starts Pocket XR afresh.
@@ -245,8 +247,29 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
         w.glassesView.onFrame = { [weak self] drawable in self?.frame(drawable) }
         w.orderFrontRegardless()
         window = w
+        captures.forEach { $0.leaveOut(windowNumber: w.windowNumber) }
         recompute()
         updateStatus()
+    }
+
+    /// 0.5.13 (XREAL 1S on an M4 Pro: one screen showed itself inside itself, "infinity screens becoming smaller and
+    /// smaller"): a floating screen in a mirror set with the glasses' display shows Pocket XR's own picture, and so
+    /// itself. The floating screens are never meant to mirror anything: any that does is taken out of mirroring, and
+    /// the glasses' own mirroring is logged.
+    private func unmirrorScreens() {
+        guard let d = displays, !d.screens.isEmpty else { return }
+        let mirrored = d.screens.map(\.id).filter { CGDisplayIsInMirrorSet($0) != 0 }
+        if let g = NSScreen.glasses?.displayID, CGDisplayIsInMirrorSet(g) != 0 {
+            let of = CGDisplayMirrorsDisplay(g)
+            plog("glasses display: in a mirror set" + (of != kCGNullDirectDisplay ? ", mirroring display \(of)" : " (others mirror it)"))
+        }
+        guard !mirrored.isEmpty else { return }
+        var configRef: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&configRef) == .success, let config = configRef else { return }
+        let was = mirrored.map { "\($0) (mirroring \(CGDisplayMirrorsDisplay($0)))" }
+        for id in mirrored { CGConfigureDisplayMirrorOfDisplay(config, id, kCGNullDirectDisplay) }
+        let r = CGCompleteDisplayConfiguration(config, .forSession)
+        plog("virtual displays: \(was.joined(separator: ", ")) were in a mirror set: taken out (\(r == .success ? "done" : "error \(r.rawValue)"))")
     }
 
     private func glassesChanged(to g: Glasses?) {
@@ -416,6 +439,7 @@ final class AppController: NSObject, NSMenuDelegate, AppActions {
             for s in d.screens {
                 let c = DisplayCapture(displayID: s.id, device: device)
                 c.setShowsCursor(!store.s.quickPointer)
+                if let w = window { c.leaveOut(windowNumber: w.windowNumber) }
                 captures.append(c)
                 let scale = madeSharper ? 2 : 1
                 Task {
