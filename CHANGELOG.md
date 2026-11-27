@@ -2,6 +2,19 @@
 
 Earlier versions: docs/release-notes-0.3.0.md, -0.4.0.md and -0.4.1.md.
 
+## 0.5.13
+
+Details: [docs/release-notes-0.5.13.md](docs/release-notes-0.5.13.md). From a Reddit report (XREAL 1S, M4 Pro MacBook
+Pro, 0.5.12).
+
+- **No screen inside a screen.** One floating screen showed "infinity screens becoming smaller and smaller": it had
+  Pocket XR's own glasses picture in it, so it showed itself without end. Each screen's capture now leaves out the
+  glasses window (DisplayCapture.leaveOut), whatever macOS does with the displays; the Launcher and hand calibration,
+  which belong on a screen, stay in. Any floating screen macOS has put into a mirror set is taken out of it when the
+  glasses' display appears and again 2 s later, and the glasses' own mirroring is logged.
+- Compiled on the Intel Air and the core checks pass (1584). Not yet tried with glasses; the exact way the glasses
+  picture got into his screen is not known without his log.
+
 ## 0.5.12
 
 Details: [docs/release-notes-0.5.12.md](docs/release-notes-0.5.12.md). From a developer's report (XREAL 1S on a Mac).

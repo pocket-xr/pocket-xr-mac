@@ -22,6 +22,9 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private var config: SCStreamConfiguration?
     /// Whether macOS's pointer is in the picture: not while Pocket XR draws it itself (Quick pointer).
     private var cursorShown = true
+    /// 0.5.13: the glasses window's number, left out of the picture (see [leaveOut]); 0 for none yet.
+    private var leftOut = 0
+    private var scDisplay: SCDisplay?
 
     init(displayID: CGDirectDisplayID, device: MTLDevice) {
         self.displayID = displayID
@@ -47,7 +50,8 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             plog("capture: display \(displayID) not in ScreenCaptureKit's list")
             throw CaptureError.noDisplay
         }
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        scDisplay = display
+        let filter = try await Self.filter(display, leavingOut: leftOut)
         let cfg = SCStreamConfiguration()
         cfg.width = width
         cfg.height = height
@@ -68,6 +72,30 @@ final class DisplayCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             cursorShown = showsCursor
             setShowsCursor(want)
         }
+    }
+
+    /// 0.5.13 (XREAL 1S on an M4 Pro, 0.5.12: one screen showed "infinity screens becoming smaller and smaller"): a
+    /// screen that has Pocket XR's glasses window in it shows its own picture inside itself, without end. That window
+    /// ([windowNumber]) is left out of the picture, whatever macOS does with the displays. Other Pocket XR windows that
+    /// belong on a screen (the Launcher, hand calibration) stay in.
+    func leaveOut(windowNumber: Int) {
+        guard windowNumber != leftOut else { return }
+        leftOut = windowNumber
+        // Not started yet: start() takes it from here.
+        guard let s = stream, let d = scDisplay else { return }
+        let id = displayID
+        Task {
+            do { try await s.updateContentFilter(Self.filter(d, leavingOut: windowNumber)) } catch {
+                plog("capture: display \(id): the glasses window could not be left out: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private static func filter(_ display: SCDisplay, leavingOut windowNumber: Int) async throws -> SCContentFilter {
+        guard windowNumber > 0 else { return SCContentFilter(display: display, excludingWindows: []) }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        let glasses = content.windows.filter { Int($0.windowID) == windowNumber }
+        return SCContentFilter(display: display, excludingWindows: glasses)
     }
 
     /// Puts macOS's pointer into the picture or takes it out, on a running stream.
